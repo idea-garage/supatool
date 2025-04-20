@@ -4,7 +4,7 @@
 // commanderでサブコマンド対応
 import { Command } from 'commander';
 import { main } from '../index';
-import { helpText } from './helptext'; // ヘルプテキストを外部ファイルからimport
+import { helpText } from './helptext.js'; // ヘルプテキストを外部ファイルからimport
 
 const program = new Command();
 
@@ -35,13 +35,13 @@ program
 // helpサブコマンド
 program
   .command('help')
-  .description('ヘルプを表示')
+  .description('Show help')
   .action(() => {
     console.log(helpText);
   });
 
-// crudサブコマンド未指定時はヘルプ表示
-if (!process.argv.slice(2).length || !['crud', 'help', '-h', '--help', '-V', '--version'].some(cmd => process.argv.includes(cmd))) {
+// サブコマンド未指定時はhelpTextのみ表示（mainは呼ばない）
+if (!process.argv.slice(2).length) {
   console.log(helpText);
   process.exit(0);
 }

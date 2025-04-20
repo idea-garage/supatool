@@ -33,6 +33,7 @@ import path from 'path';
 const args = process.argv.slice(2);
 let importPath = 'shared/';
 let exportPath = 'src/integrations/supabase/';
+let tables: string[] | null = null;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '-i' && args[i + 1]) {
@@ -40,6 +41,9 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === '-e' && args[i + 1]) {
     exportPath = args[i + 1];
+    i++;
+  } else if ((args[i] === '--tables' || args[i] === '-t') && args[i + 1]) {
+    tables = args[i + 1].split(',').map((t) => t.trim());
     i++;
   }
 }
@@ -53,7 +57,7 @@ const crudFolderPath = path.join(resolvedExportPath, 'crud-autogen/');
 // メイン処理を関数化
 export function main(): void {
   // --forceオプション判定
-  const force = process.argv.includes('--force');
+  const force = process.argv.includes('--force') || process.argv.includes('-f');
 
   // 型定義ファイルの存在チェック
   if (!existsSync(typeDefinitionsPath)) {
@@ -153,27 +157,35 @@ export function main(): void {
     }
 
     // 型ごとのCRUDコード生成を実行
-    types.forEach(type => {
-      const fileName = toLowerCamelCase(type.typeName);
-      const crudCode = crudTemplate(type.typeName, type.fields, type.isView);
-      const filePath = crudFolderPath + `${fileName}.ts`;
+    types
+      .filter(type => {
+        // tables指定があれば、そのテーブル名のみ生成
+        if (tables && tables.length > 0) {
+          return tables.includes(type.typeName);
+        }
+        return true;
+      })
+      .forEach(type => {
+        const fileName = toLowerCamelCase(type.typeName);
+        const crudCode = crudTemplate(type.typeName, type.fields, type.isView);
+        const filePath = crudFolderPath + `${fileName}.ts`;
 
-      // コンソールで確認
-      if (type.isView) {
-        console.log(`Generating select operations only for view: ${fileName}`);
-      } else {
-        console.log(`Generating full CRUD operations for table: ${fileName}`);
-      }
+        // コンソールで確認
+        if (type.isView) {
+          console.log(`Generating select operations only for view: ${fileName}`);
+        } else {
+          console.log(`Generating full CRUD operations for table: ${fileName}`);
+        }
 
-      // ファイルのディレクトリが存在しない場合は作成
-      const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
-      if (!existsSync(dirPath)) {
-        mkdirSync(dirPath, { recursive: true });
-      }
+        // ファイルのディレクトリが存在しない場合は作成
+        const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        if (!existsSync(dirPath)) {
+          mkdirSync(dirPath, { recursive: true });
+        }
 
-      writeFileSync(filePath, crudCode);
-      console.log(`Generated ${fileName}.ts`);
-    });
+        writeFileSync(filePath, crudCode);
+        console.log(`Generated ${fileName}.ts`);
+      });
 
     console.log("CRUD operations have been generated.");
   }

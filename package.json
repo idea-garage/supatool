@@ -1,0 +1,33 @@
+{
+  "name": "supatool",
+  "version": "0.1.0",
+  "description": "Supabase型定義からCRUDコードを自動生成するCLIツール",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "supatool": "dist/bin/supatool.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx bin/supatool.ts"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "keywords": [
+    "supabase",
+    "crud",
+    "cli",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.30"
+  }
+}

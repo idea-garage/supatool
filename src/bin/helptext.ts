@@ -1,3 +1,4 @@
+// See: [src/bin/helptext.ts](./src/bin/helptext.ts) from project root
 // Help text (command section from README, English only)
 export const helpText = `
 Supatool CLI - Generate TypeScript CRUD code from Supabase type definitions
@@ -13,6 +14,7 @@ Commands:
 Options:
   -i, --import <path>   Import path for type definitions (default: shared/)
   -e, --export <path>   Output path for CRUD code (default: src/integrations/supabase/)
+  --force               Overwrite output folder without confirmation
   -h, --help            Show help
   -V, --version         Show version
 

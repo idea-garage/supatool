@@ -17,7 +17,7 @@ pnpm add -g supatool
 1. Generate Supabase type definition file
 
 ```
-npx supabase gen types typescript --project-id "your-project-id" --schema public > shared/types.ts
+npx supabase gen types typescript --project-id your_project_ref --schema public > shared/types.ts
 ```
 
 2. Auto-generate CRUD code
@@ -27,14 +27,26 @@ supatool
 ```
 - Output: `src/integrations/supabase/crud-autogen/`
 
-## Commands & Options
+3. Subcommands
 
-See the help command for all available commands and options:
+See: [src/bin/helptext.ts](./src/bin/helptext.ts)
 
+For details on how to specify input/output folders, please refer to this as well.
+
+## VSCode/Cursor: Run Supabase CLI and supatool together
+
+You can add a task to `.vscode/tasks.json` to run both commands at once:
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Generate Supabase types and CRUD",
+      "type": "shell",
+      "command": "mkdir -p shared && npx supabase gen types typescript --project-id your_project_id --schema public > shared/types.ts && supatool crud --force",
+      "group": "build"
+    }
+  ]
+}
 ```
-supatool help
-```
-
-## License
-
-MIT 

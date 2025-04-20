@@ -52,6 +52,9 @@ const crudFolderPath = path.join(resolvedExportPath, 'crud-autogen/');
 
 // メイン処理を関数化
 export function main(): void {
+  // --forceオプション判定
+  const force = process.argv.includes('--force');
+
   // 型定義ファイルの存在チェック
   if (!existsSync(typeDefinitionsPath)) {
     console.error(`Error: Type definition file not found: ${typeDefinitionsPath}`);
@@ -59,100 +62,121 @@ export function main(): void {
     console.error('  npx supabase gen types typescript --project-id "your-project-id" --schema public > shared/types.ts');
     process.exit(1);
   }
-  // 型定義ファイルを読む
-  const typeDefinitions = readFileSync(typeDefinitionsPath, 'utf-8');
-  // TypeScriptのパーサを使って型を解析
-  const sourceFile = createSourceFile(
-    typeDefinitionsPath,
-    typeDefinitions,
-    ScriptTarget.Latest
-  );
-  // プログラムを作成して型チェッカーを取得
-  const program = createProgram([typeDefinitionsPath], {});
-  const typeChecker = program.getTypeChecker();
 
-  // スキーマ名を動的に取得するための関数
-  const getSchemaName = (typeNode: any) => {
-    return typeNode.members.find((member: any) => member.name && member.name.text)
-      ?.name.text;
-  };
-
-  // 型を抽出する（Database型のみを対象）
-  const types = sourceFile.statements
-      .filter(stmt => stmt.kind === SyntaxKind.TypeAliasDeclaration)
-      .flatMap(typeAliasDecl => {
-          const typeName = (typeAliasDecl as any).name.text;
-          const typeNode = (typeAliasDecl as any).type;
-          if (typeNode.kind === SyntaxKind.TypeLiteral && typeName === 'Database') {
-              const schemaName = getSchemaName(typeNode);
-              const schemaType = typeNode.members.find((member: any) => 
-                  member.name && member.name.text === schemaName
-              );
-              if (schemaType && schemaType.type.kind === SyntaxKind.TypeLiteral) {
-                  const tablesAndViewsType = schemaType.type.members.filter((member: any) => 
-                      member.name && (member.name.text === 'Tables' || member.name.text === 'Views')
-                  );
-                  return tablesAndViewsType.flatMap((tablesOrViewsType: any) => {
-                      if (tablesOrViewsType.type.kind === SyntaxKind.TypeLiteral) {
-                          return tablesOrViewsType.type.members.map((tableOrViewMember: any) => {
-                              const tableName = tableOrViewMember.name.text;
-                              const isView = tablesOrViewsType.name.text === 'Views';
-                              const rowType = tableOrViewMember.type.members.find((member: any) => 
-                                  member.name && member.name.text === 'Row'
-                              );
-                              if (rowType && rowType.type.kind === SyntaxKind.TypeLiteral) {
-                                  const fields = rowType.type.members.map((member: any) => {
-                                      if (member.name && member.name.kind === SyntaxKind.Identifier) {
-                                          const name = member.name.getText(sourceFile);
-                                          const type = member.type ? member.type.getText(sourceFile) : 'unknown';
-                                          return { name, type };
-                                      }
-                                      return { name: 'unknown', type: 'unknown' };
-                                  });
-                                  return { typeName: tableName, fields, isView };
-                              }
-                              return null;
-                          }).filter((type: any) => type !== null);
-                      }
-                      return [];
-                  });
-              }
-          }
-          return [];
-      });
-
-  // 生成処理の開始を表示
-  console.log(`Import path: ${importPath}`);
-  console.log(`Export path: ${exportPath}`);
-  // CRUDフォルダが存在しない場合は作成
-  if (!existsSync(crudFolderPath)) {
-    mkdirSync(crudFolderPath, { recursive: true });
+  // 出力先フォルダが存在する場合の確認
+  if (existsSync(crudFolderPath) && !force) {
+    // 標準入力で確認
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`Output folder already exists: ${crudFolderPath}\nOverwrite? (y/N): `, (answer: string) => {
+      rl.close();
+      if (answer.toLowerCase() !== 'y') {
+        console.log('Canceled.');
+        process.exit(0);
+      } else {
+        generateCrud();
+      }
+    });
+    return;
   }
+  generateCrud();
 
-  // 型ごとのCRUDコード生成を実行
-  types.forEach(type => {
-    const fileName = toLowerCamelCase(type.typeName);
-    const crudCode = crudTemplate(type.typeName, type.fields, type.isView);
-    const filePath = crudFolderPath + `${fileName}.ts`;
+  function generateCrud() {
+    // 型定義ファイルを読む
+    const typeDefinitions = readFileSync(typeDefinitionsPath, 'utf-8');
+    // TypeScriptのパーサを使って型を解析
+    const sourceFile = createSourceFile(
+      typeDefinitionsPath,
+      typeDefinitions,
+      ScriptTarget.Latest
+    );
+    // プログラムを作成して型チェッカーを取得
+    const program = createProgram([typeDefinitionsPath], {});
+    const typeChecker = program.getTypeChecker();
 
-    // コンソールで確認
-    if (type.isView) {
-      console.log(`Generating select operations only for view: ${fileName}`);
-    } else {
-      console.log(`Generating full CRUD operations for table: ${fileName}`);
+    // スキーマ名を動的に取得するための関数
+    const getSchemaName = (typeNode: any) => {
+      return typeNode.members.find((member: any) => member.name && member.name.text)
+        ?.name.text;
+    };
+
+    // 型を抽出する（Database型のみを対象）
+    const types = sourceFile.statements
+        .filter(stmt => stmt.kind === SyntaxKind.TypeAliasDeclaration)
+        .flatMap(typeAliasDecl => {
+            const typeName = (typeAliasDecl as any).name.text;
+            const typeNode = (typeAliasDecl as any).type;
+            if (typeNode.kind === SyntaxKind.TypeLiteral && typeName === 'Database') {
+                const schemaName = getSchemaName(typeNode);
+                const schemaType = typeNode.members.find((member: any) => 
+                    member.name && member.name.text === schemaName
+                );
+                if (schemaType && schemaType.type.kind === SyntaxKind.TypeLiteral) {
+                    const tablesAndViewsType = schemaType.type.members.filter((member: any) => 
+                        member.name && (member.name.text === 'Tables' || member.name.text === 'Views')
+                    );
+                    return tablesAndViewsType.flatMap((tablesOrViewsType: any) => {
+                        if (tablesOrViewsType.type.kind === SyntaxKind.TypeLiteral) {
+                            return tablesOrViewsType.type.members.map((tableOrViewMember: any) => {
+                                const tableName = tableOrViewMember.name.text;
+                                const isView = tablesOrViewsType.name.text === 'Views';
+                                const rowType = tableOrViewMember.type.members.find((member: any) => 
+                                    member.name && member.name.text === 'Row'
+                                );
+                                if (rowType && rowType.type.kind === SyntaxKind.TypeLiteral) {
+                                    const fields = rowType.type.members.map((member: any) => {
+                                        if (member.name && member.name.kind === SyntaxKind.Identifier) {
+                                            const name = member.name.getText(sourceFile);
+                                            const type = member.type ? member.type.getText(sourceFile) : 'unknown';
+                                            return { name, type };
+                                        }
+                                        return { name: 'unknown', type: 'unknown' };
+                                    });
+                                    return { typeName: tableName, fields, isView };
+                                }
+                                return null;
+                            }).filter((type: any) => type !== null);
+                        }
+                        return [];
+                    });
+                }
+            }
+            return [];
+        });
+
+    // 生成処理の開始を表示
+    console.log(`Import path: ${importPath}`);
+    console.log(`Export path: ${exportPath}`);
+    // CRUDフォルダが存在しない場合は作成
+    if (!existsSync(crudFolderPath)) {
+      mkdirSync(crudFolderPath, { recursive: true });
     }
 
-    // ファイルのディレクトリが存在しない場合は作成
-    const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
-    if (!existsSync(dirPath)) {
-      mkdirSync(dirPath, { recursive: true });
-    }
+    // 型ごとのCRUDコード生成を実行
+    types.forEach(type => {
+      const fileName = toLowerCamelCase(type.typeName);
+      const crudCode = crudTemplate(type.typeName, type.fields, type.isView);
+      const filePath = crudFolderPath + `${fileName}.ts`;
 
-    writeFileSync(filePath, crudCode);
-    console.log(`Generated ${fileName}.ts`);
-  });
+      // コンソールで確認
+      if (type.isView) {
+        console.log(`Generating select operations only for view: ${fileName}`);
+      } else {
+        console.log(`Generating full CRUD operations for table: ${fileName}`);
+      }
 
-  console.log("CRUD operations have been generated.");
+      // ファイルのディレクトリが存在しない場合は作成
+      const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+      if (!existsSync(dirPath)) {
+        mkdirSync(dirPath, { recursive: true });
+      }
+
+      writeFileSync(filePath, crudCode);
+      console.log(`Generated ${fileName}.ts`);
+    });
+
+    console.log("CRUD operations have been generated.");
+  }
 }
 
 // Function to convert a string to lower camel case

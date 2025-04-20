@@ -19,6 +19,7 @@ program
   .description('CRUD型生成')
   .option('-i, --import <path>', '型定義のimportパス', 'shared/')
   .option('-e, --export <path>', 'CRUD出力先パス', 'src/integrations/supabase/')
+  .option('--force', '上書き確認なしで出力先を強制上書き')
   .action((options) => {
     // コマンドライン引数をprocess.argvに反映（既存main()流用のため）
     const args = process.argv.slice(0, 2);
@@ -27,6 +28,9 @@ program
     }
     if (options.export) {
       args.push('-e', options.export);
+    }
+    if (options.force) {
+      args.push('--force');
     }
     process.argv = args;
     main();

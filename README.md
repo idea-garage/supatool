@@ -23,19 +23,23 @@ npx supabase gen types typescript --project-id your_project_ref --schema public 
 2. Auto-generate CRUD code
 
 ```
-supatool
+supatool crud
 ```
 - Output: `src/integrations/supabase/crud-autogen/`
 
 3. Subcommands
 
-See: [src/bin/helptext.ts](./src/bin/helptext.ts)
+See: [src/bin/helptext.ts](./src/bin/helptext.ts) (for development)
+or [dist/bin/helptext.js](./dist/bin/helptext.js) (for npm package)
 
 For details on how to specify input/output folders, please refer to this as well.
 
 ## VSCode/Cursor: Run Supabase CLI and supatool together
 
 You can add a task to `.vscode/tasks.json` to run both commands at once:
+
+> **Note:**
+> After installing supatool, please restart VSCode (or your terminal) before using the task, so that the new command is recognized.
 
 ```json
 {
@@ -51,7 +55,7 @@ You can add a task to `.vscode/tasks.json` to run both commands at once:
 }
 ```
 
-## Example: How to use generated CRUD code in your app
+## Example: How to use generated CRUD code in your apps
 
 CRUD utility files for the `apps` table will be generated in `src/integrations/supabase/crud-autogen/` by default.
 

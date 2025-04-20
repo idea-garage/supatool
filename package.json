@@ -1,6 +1,6 @@
 {
   "name": "supatool",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "A CLI tool that automatically generates TypeScript CRUD code from Supabase type definitions.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,11 +27,11 @@
   "author": "IdeaGarage",
   "license": "MIT",
   "dependencies": {
+    "commander": "^13.1.0",
     "tsx": "^4.7.0",
     "typescript": "^5.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.17.30",
-    "commander": "^13.1.0"
+    "@types/node": "^20.17.30"
   }
 }

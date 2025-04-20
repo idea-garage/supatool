@@ -1,0 +1,22 @@
+# node_modules ディレクトリ
+node_modules/
+
+# 環境変数ファイル
+.env
+
+# ビルド成果物
+dist/
+build/
+
+# ログファイル
+*.log
+
+# テストカバレッジ
+coverage/
+
+# OSごとの不要ファイル
+.DS_Store
+
+# IDE設定
+.vscode/
+.idea/

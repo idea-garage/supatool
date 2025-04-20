@@ -1,0 +1,14 @@
+# Ignore development and config files
+.git
+.gitignore
+node_modules
+dist/*.map
+src/
+test/
+.vscode/
+.DS_Store
+*.log
+*.ts
+*.md
+package-lock.json
+tsconfig.json 

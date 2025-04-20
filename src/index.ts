@@ -303,7 +303,8 @@ return exportHeaders + exportSelectQueries + (hasIdColumn ? exportSelectById : '
 // メイン処理を関数化
 export function main(): void {
   // 生成処理の開始を表示
-  console.log(`インポートパス「${importPath}」からエクスポートパス「${exportPath}」へCRUDコードを生成します。`);
+  console.log(`Import path: ${importPath}`);
+  console.log(`Export path: ${exportPath}`);
   // CRUDフォルダが存在しない場合は作成
   if (!existsSync(crudFolderPath)) {
     mkdirSync(crudFolderPath, { recursive: true });

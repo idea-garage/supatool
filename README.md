@@ -1,60 +1,40 @@
 # Supatool
 
-Supabase型定義からTypeScriptのCRUDコードを自動生成するCLIツール
+A CLI tool that automatically generates TypeScript CRUD code from Supabase type definitions.
 
-## インストール
+## Install
 
 ```
 npm install -g supatool
-# または
+# or
 yarn global add supatool
-# または
+# or
 pnpm add -g supatool
 ```
 
-## 使い方
+## Usage
 
-1. Supabase型定義ファイルを生成
+1. Generate Supabase type definition file
 
 ```
 npx supabase gen types typescript --project-id "your-project-id" --schema public > shared/types.ts
 ```
 
-2. CRUDコード自動生成
+2. Auto-generate CRUD code
 
 ```
 supatool
 ```
+- Output: `src/integrations/supabase/crud-autogen/`
 
-- `src/integrations/supabase/crud-autogen/` にCRUDコードが出力されます
+## Commands & Options
 
-## コマンド
+See the help command for all available commands and options:
 
 ```
-supatool
+supatool help
 ```
 
-## コマンド引数
-
-- `-i` インポートパス（型定義ファイルのディレクトリ）
-- `-e` エクスポートパス（CRUDコード出力先ディレクトリ）
-
-### 例
-
-#### 引数なし（デフォルト）
-```
-supatool
-```
-- インポートパス: `shared/`
-- エクスポートパス: `src/integrations/supabase/`
-
-#### オプション指定
-```
-supatool -i path/to/import -e path/to/export
-```
-- インポートパス: `path/to/import`
-- エクスポートパス: `path/to/export`
-
-## ライセンス
+## License
 
 MIT 

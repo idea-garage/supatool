@@ -14,7 +14,8 @@ Commands:
 Options:
   -i, --import <path>   Import path for type definitions (default: shared/)
   -e, --export <path>   Output path for CRUD code (default: src/integrations/supabase/)
-  --force               Overwrite output folder without confirmation
+  -t, --tables <names>  Generate code for specific tables only (comma separated, e.g. table1,table2)
+  -f, --force           Overwrite output folder without confirmation
   -h, --help            Show help
   -V, --version         Show version
 
@@ -26,4 +27,7 @@ Examples:
   supatool crud -i path/to/import -e path/to/export
     - Import path: path/to/import
     - Export path: path/to/export
+
+  supatool crud -t users,posts
+    - Only generate for users and posts tables
 `; 

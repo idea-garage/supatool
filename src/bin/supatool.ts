@@ -5,13 +5,14 @@
 import { Command } from 'commander';
 import { main } from '../index';
 import { helpText } from './helptext.js'; // Import help text from external file
+import { version } from '../../package.json';
 
 const program = new Command();
 
 program
   .name('supatool')
   .description('Supatool CLI')
-  .version('0.1.0');
+  .version(version);
 
 // crud subcommand
 program

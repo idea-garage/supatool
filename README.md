@@ -29,10 +29,32 @@ supatool crud
 
 3. Subcommands
 
-See: [src/bin/helptext.ts](./src/bin/helptext.ts) (for development)
-or [dist/bin/helptext.js](./dist/bin/helptext.js) (for npm package)
+For more extensible usage, execute with subcommands:
 
-For details on how to specify input/output folders, please refer to this as well.
+- Show help text for all commands:
+  ```sh
+  supatool help
+  ```
+
+- Specify input and output folder:
+  ```sh
+  supatool -i path/to/type -o path/to/export
+  ```
+
+For detailed usage, see:
+- [src/bin/helptext.ts](./src/bin/helptext.ts) (for development)
+- [dist/bin/helptext.js](./dist/bin/helptext.js) (for npm package)
+
+## Note: Supabase Client Requirement
+
+The generated CRUD code assumes that a Supabase client is defined in ../client.ts (relative to the export folder).
+Example:
+
+```ts
+// src/integrations/supabase/client.ts
+import { createClient } from '@supabase/supabase-js'
+export const supabase = createClient('YOUR_SUPABASE_URL', 'YOUR_SUPABASE_ANON_KEY')
+```
 
 ## VSCode/Cursor: Run Supabase CLI and supatool together
 

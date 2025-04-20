@@ -1,6 +1,6 @@
 {
   "name": "supatool",
-  "version": "0.1.2",
+  "version": "0.1.23",
   "description": "A CLI tool that automatically generates TypeScript CRUD code from Supabase type definitions.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

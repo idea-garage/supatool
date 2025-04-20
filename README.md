@@ -50,3 +50,48 @@ You can add a task to `.vscode/tasks.json` to run both commands at once:
   ]
 }
 ```
+
+## Example: How to use generated CRUD code in your app
+
+CRUD utility files for the `apps` table will be generated in `src/integrations/supabase/crud-autogen/` by default.
+
+You can import and use these functions in your application as follows:
+
+```ts
+// Example: Using CRUD functions for the apps table
+import {
+  selectAppsRowsWithFilters,
+  selectAppsSingleRowWithFilters,
+  selectAppsRowById,
+  insertAppsRow,
+  updateAppsRow,
+  deleteAppsRow,
+} from 'src/integrations/supabase/crud-autogen/apps';
+
+// Get multiple rows with filters
+const apps = await selectAppsRowsWithFilters({ status: 'active' });
+
+// Get a single row with filters
+const app = await selectAppsSingleRowWithFilters({ id: 'your-app-id' });
+
+// Get by ID
+const appById = await selectAppsRowById('your-app-id');
+
+// Create new row
+const newApp = await insertAppsRow({ name: 'New App', status: 'active' });
+
+// Update row
+const updatedApp = await updateAppsRow({ id: 'your-app-id', name: 'Updated Name' });
+
+// Delete row
+const deletedApp = await deleteAppsRow('your-app-id');
+```
+
+- All functions are async and return the corresponding row type.
+- You can use filter objects for flexible queries.
+- See the generated file for each table in `src/integrations/supabase/crud-autogen/` for details.
+
+## Limitations
+
+Currently, the generated code only supports tables where the primary key column is named `id`.
+If your table's primary key is not named `id`, the `selectById`, `update`, and `delete` functions will not be generated for that table.

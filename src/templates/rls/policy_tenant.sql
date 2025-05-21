@@ -1,0 +1,1 @@
+get_user_role() IN (${roles}) AND tenant_id = ${tenantIdExpr} 

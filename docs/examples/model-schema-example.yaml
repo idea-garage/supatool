@@ -1,0 +1,172 @@
+# skeletonテンプレート標準: user_profiles, user_settingsは全テンプレート共通で利用
+# ※重複時は開発者のスキーマ定義を優先
+models:
+  user:
+    tables:
+      user_profiles:
+        description: ユーザープロファイル情報（デフォルト固定）
+        fields:
+          id:
+            type: uuid
+            primary: true
+            default: uuid_generate_v4()
+            label: ユーザーID
+          name:
+            type: text
+            notNull: true
+            label: 氏名
+          created_at:
+            type: timestamp
+            default: now()
+            label: 登録日時
+        relations:
+          participants:
+            type: hasMany
+            target: participants
+            foreignKey: user_profile_id
+      user_settings:
+        description: ユーザー設定（よりセキュア、デフォルト固定）
+        fields:
+          id:
+            type: uuid
+            primary: true
+          user_id:
+            type: uuid
+            notNull: true
+          two_factor_enabled:
+            type: boolean
+            default: false
+            label: 2段階認証有効
+      participants:
+        description: イベント参加者情報
+        fields:
+          id:
+            type: uuid
+            primary: true
+            default: uuid_generate_v4()
+            label: 参加者ID
+          user_id:
+            type: uuid
+            ref: user_profiles.id
+            notNull: true
+            label: ユーザーID
+          status:
+            type: text
+            enum: [pending, confirmed, cancelled]
+            label: ステータス
+        relations:
+          user_profile:
+            type: belongsTo
+            target: user_profiles
+            foreignKey: user_id
+    views:
+      user_summary:
+        description: ユーザー集計ビュー
+        # ...
+    security:
+      policies:
+        user_profiles:
+          select:
+            role: [admin, user]
+            use_template: true
+            template_type: simple
+          update:
+            role: [admin]
+            use_template: true
+            template_type: simple
+          delete:
+            using: get_user_role() = 'admin'
+            use_template: false
+        user_settings:
+          select:
+            role: [admin, user]
+            use_template: true
+            template_type: simple
+        participants:
+          select:
+            role: [admin, user]
+            use_template: true
+            template_type: simple
+  project:
+    tables:
+      projects:
+        description: プロジェクト情報
+        fields:
+          id:
+            type: uuid
+            primary: true
+          name:
+            type: text
+            notNull: true
+        relations:
+          members:
+            type: hasMany
+            target: members
+            foreignKey: project_id
+      members:
+        description: プロジェクトメンバー
+        fields:
+          id:
+            type: uuid
+            primary: true
+          project_id:
+            type: uuid
+            notNull: true
+          user_id:
+            type: uuid
+            notNull: true
+    views:
+      project_summary:
+        description: プロジェクト集計ビュー
+        # ...
+    security:
+      policies:
+        projects:
+          select:
+            role: [admin, user]
+            use_template: true
+            template_type: simple
+  system:
+    tables:
+      m_roles:
+        description: ロールマスタ
+        fields:
+          id:
+            type: uuid
+            primary: true
+          name:
+            type: text
+            notNull: true
+      user_roles:
+        description: ユーザーごとのロール割当
+        fields:
+          id:
+            type: uuid
+            primary: true
+          user_id:
+            type: uuid
+            notNull: true
+          role_id:
+            type: uuid
+            notNull: true
+      auth.users:
+        description: Supabase組み込みユーザーテーブル
+        skipCreate: true  # このテーブルは自動生成しない
+        fields:
+          id:
+            type: uuid
+            primary: true
+          email:
+            type: text
+
+roles:
+  - admin
+  - user
+  - guest
+
+security:
+  functions:
+    get_user_role:
+      description: ユーザーのロールを取得
+      use_template: true
+      template_type: simple

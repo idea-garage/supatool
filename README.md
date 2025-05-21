@@ -38,7 +38,7 @@ For more extensible usage, execute with subcommands:
 
 - Specify input and output folder:
   ```sh
-  supatool -i path/to/type -o path/to/export
+  supatool -i path/to/input -o path/to/output
   ```
 
 For detailed usage, see:
@@ -129,3 +129,17 @@ For more details, see the project on GitHub: [https://github.com/idea-garage/sup
 ## Acknowledgements
 
 This project is inspired by and made possible thanks to the amazing work of [Supabase](https://supabase.com/).
+
+## New Features
+
+- Added skipCreate flag for built-in tables like Supabase's auth.users
+- Primary key information can now be explicitly defined in table definition documents (Markdown, etc.)
+- Template model structures organized for skeleton, todo, project, and other templates
+- Graph theory (node/edge model) extension policy added for future expansion
+
+## Changelog
+
+### v0.2.0
+- Added `gen:` commands for code and schema generation
+- Enhanced `create` command
+- Introduced model schema support (`schemas/supatool-model.schema.ts`)

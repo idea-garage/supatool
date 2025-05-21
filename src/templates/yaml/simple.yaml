@@ -1,0 +1,94 @@
+roles:
+  - admin
+  - user
+  - guest
+
+models:
+  m_roles:
+    description: ロールマスタ
+    fields:
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: text
+        notNull: true
+  user_roles:
+    description: ユーザーごとのロール割当
+    fields:
+      id:
+        type: uuid
+        primary: true
+      user_id:
+        type: uuid
+        notNull: true
+      role_id:
+        type: uuid
+        notNull: true
+  user_profiles:
+    description: ユーザープロファイル情報
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: uuid_generate_v4()
+        label: ユーザーID
+      name:
+        type: text
+        notNull: true
+        label: 氏名
+      created_at:
+        type: timestamp
+        default: now()
+    relations:
+      participants:
+        type: hasMany
+        target: participants
+        foreignKey: user_profile_id
+  participants:
+    description: イベント参加者情報
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: uuid_generate_v4()
+        label: 参加者ID
+      user_id:
+        type: uuid
+        ref: user_profiles.id
+        notNull: true
+        label: ユーザーID
+      status:
+        type: text
+        enum: [pending, confirmed, cancelled]
+        label: ステータス
+    relations:
+      user_profile:
+        type: belongsTo
+        target: user_profiles
+        foreignKey: user_id
+
+security:
+  functions:
+    get_user_role:
+      description: ユーザーのロールを取得
+      use_template: true
+      template_type: simple
+  policies:
+    user_profiles:
+      select:
+        role: [admin, user]
+        use_template: true
+        template_type: simple
+      update:
+        role: [admin]
+        use_template: true
+        template_type: simple
+      delete:
+        using: get_user_role() = 'admin'
+        use_template: false
+    participants:
+      select:
+        role: [admin, user]
+        use_template: true
+        template_type: simple 

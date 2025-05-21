@@ -1,0 +1,52 @@
+import { generateSqlFromModel } from './src/generator/sqlGenerator';
+import fs from 'fs';
+
+// モデルデータをJSONで用意
+const model = {
+  "models": [
+    {
+      "raw": "user",
+      "fields": {
+        "id": {
+          "type": "uuid",
+          "label": "ID",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "primary": true
+        },
+        "name": {
+          "type": "text",
+          "label": "名前"
+        },
+        "created_at": {
+          "type": "timestamp",
+          "label": "作成日時",
+          "notNull": true
+        },
+        "updated_at": {
+          "type": "timestamp",
+          "label": "更新日時",
+          "notNull": true
+        }
+      },
+      "japanese": "ユーザー",
+      "original": "ユーザー",
+      "mainModel": true,
+      "modelType": "main-model",
+      "relations": {},
+      "description": "ユーザー"
+    }
+  ]
+};
+
+// tables構造に変換
+model.models[0].tables = {
+  user: {
+    fields: model.models[0].fields,
+    relations: model.models[0].relations,
+    description: model.models[0].description
+  }
+};
+
+// SQL生成
+generateSqlFromModel(model, './output.sql');

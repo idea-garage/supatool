@@ -1,7 +1,7 @@
 {
   "name": "supatool",
-  "version": "0.1.23",
-  "description": "A CLI tool that automatically generates TypeScript CRUD code from Supabase type definitions.",
+  "version": "0.3.0",
+  "description": "A CLI tool for Supabase schema extraction and TypeScript CRUD generation with declarative database schema support.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "npm link",
     "start": "tsx bin/supatool.ts"
   },
   "files": [
@@ -27,11 +28,25 @@
   "author": "IdeaGarage",
   "license": "MIT",
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
     "commander": "^13.1.0",
+    "diff": "^5.2.0",
+    "dotenv": "^16.5.0",
+    "js-yaml": "^4.1.0",
+    "minimist": "^1.2.8",
+    "ora": "^5.4.1",
+    "pg": "^8.11.3",
+    "pg-structure": "^7.2.0",
     "tsx": "^4.7.0",
     "typescript": "^5.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.17.30"
+    "@types/diff": "^7.0.2",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.17.30",
+    "@types/pg": "^8.11.0"
+  },
+  "exports": {
+    "./schemas/supatool-data.schema": "./schemas/supatool-data.schema.ts"
   }
 }

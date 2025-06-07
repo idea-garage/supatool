@@ -1,0 +1,173 @@
+{
+  "dataSchema": [
+    {
+      "raw": "user_profiles",
+      "fields": {
+        "id": {
+          "type": "uuid",
+          "label": "ID",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "primary": true
+        },
+        "name": {
+          "type": "text",
+          "label": "名前"
+        },
+        "created_at": {
+          "type": "timestamp",
+          "label": "作成日時",
+          "notNull": true
+        },
+        "updated_at": {
+          "type": "timestamp",
+          "label": "更新日時",
+          "notNull": true
+        }
+      },
+      "japanese": "ユーザープロファイル",
+      "original": "user-profiles",
+      "mainModel": false,
+      "modelType": "sub-model",
+      "relations": {},
+      "tableName": "user_profiles",
+      "description": "ユーザープロファイル情報を管理するモデルです。"
+    },
+    {
+      "raw": "knowledge_articles",
+      "fields": {
+        "id": {
+          "type": "uuid",
+          "label": "ID",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "primary": true
+        },
+        "title": {
+          "type": "text",
+          "label": "タイトル"
+        },
+        "content": {
+          "type": "text",
+          "label": "内容"
+        },
+        "created_at": {
+          "type": "timestamp",
+          "label": "作成日時",
+          "notNull": true
+        },
+        "updated_at": {
+          "type": "timestamp",
+          "label": "更新日時",
+          "notNull": true
+        },
+        "category_id": {
+          "type": "uuid",
+          "label": "カテゴリID",
+          "notNull": true
+        }
+      },
+      "japanese": "ナレッジ記事",
+      "original": "knowledge-articles",
+      "mainModel": true,
+      "modelType": "main-model",
+      "relations": {
+        "category_id": {
+          "refTable": "categories",
+          "refColumn": "id"
+        }
+      },
+      "tableName": "knowledge_articles",
+      "description": "ナレッジ記事を管理するモデルです。"
+    },
+    {
+      "raw": "categories",
+      "fields": {
+        "id": {
+          "type": "uuid",
+          "label": "ID",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "primary": true
+        },
+        "name": {
+          "type": "text",
+          "label": "カテゴリ名"
+        },
+        "created_at": {
+          "type": "timestamp",
+          "label": "作成日時",
+          "notNull": true
+        },
+        "updated_at": {
+          "type": "timestamp",
+          "label": "更新日時",
+          "notNull": true
+        }
+      },
+      "japanese": "カテゴリ",
+      "original": "categories",
+      "mainModel": false,
+      "modelType": "master",
+      "relations": {},
+      "tableName": "categories",
+      "description": "ナレッジ記事のカテゴリを管理するモデルです。"
+    },
+    {
+      "raw": "update_histories",
+      "fields": {
+        "id": {
+          "type": "uuid",
+          "label": "ID",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "primary": true
+        },
+        "name": {
+          "type": "text",
+          "label": "名称"
+        },
+        "created_at": {
+          "type": "timestamp",
+          "label": "作成日時",
+          "notNull": true
+        },
+        "updated_at": {
+          "type": "timestamp",
+          "label": "更新日時",
+          "notNull": true
+        },
+        "update_comment": {
+          "type": "text",
+          "label": "更新コメント"
+        },
+        "updated_by_user_id": {
+          "type": "uuid",
+          "label": "更新者ユーザーID",
+          "notNull": true
+        },
+        "knowledge_article_id": {
+          "type": "uuid",
+          "label": "ナレッジ記事ID",
+          "notNull": true
+        }
+      },
+      "japanese": "更新履歴",
+      "original": "update-histories",
+      "mainModel": false,
+      "modelType": "log",
+      "relations": {
+        "updated_by_user_id": {
+          "refTable": "user_profiles",
+          "refColumn": "id"
+        },
+        "knowledge_article_id": {
+          "refTable": "knowledge_articles",
+          "refColumn": "id"
+        }
+      },
+      "tableName": "update_histories",
+      "description": "記事の更新履歴を管理するモデルです。"
+    }
+  ]
+}

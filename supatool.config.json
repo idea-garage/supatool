@@ -1,0 +1,6 @@
+{
+  "connectionString": "postgresql://user:password@host:port/database",
+  "schemaDir": "./supabase/schemas",
+  "tablePattern": "*",
+  "_comment": "接続文字列は .env または .env.local ファイルでSUPABASE_CONNECTION_STRINGまたはDATABASE_URLで設定することを推奨"
+}

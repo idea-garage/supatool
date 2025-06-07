@@ -1,0 +1,31 @@
+{
+  "name": "supabase-schema-sync",
+  "version": "0.1.0",
+  "description": "Sync Supabase/Postgres schemas between remote and local with per-table timestamp tracking.",
+  "main": "dist/index.js",
+  "bin": {
+    "supabase-schema-sync": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "pg-structure": "^7.2.0",
+    "diff": "^5.0.0",
+    "minimist": "^1.2.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "keywords": [
+    "supabase",
+    "postgresql",
+    "schema",
+    "sync",
+    "migration"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

@@ -1,5 +1,5 @@
 // RLS/セキュリティポリシーSQL自動生成（最小雛形）
-// 日本語コメント
+// Todo: スキーマを設定可能とする
 import path from 'path';
 import fs from 'fs';
 
@@ -12,6 +12,19 @@ export function generateRlsSqlFromModel(model: any, outPath: string) {
   const dir = path.dirname(outPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
+  }
+  // dataSchema/models両対応: テーブル一覧取得
+  let tables: any[] = [];
+  if (Array.isArray(model.dataSchema)) {
+    tables = model.dataSchema.map((t: any) => ({ tableName: t.tableName || t.raw, ...t }));
+  } else if (Array.isArray(model.models)) {
+    for (const m of model.models) {
+      if (m.tables) {
+        for (const [tableName, table] of Object.entries(m.tables)) {
+          tables.push(Object.assign({ tableName }, table));
+        }
+      }
+    }
   }
   let sql = '-- 自動生成: RLS/セキュリティポリシーDDL\n\n';
   const security = model.security || {};

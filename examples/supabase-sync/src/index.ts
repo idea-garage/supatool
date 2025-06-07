@@ -1,0 +1,1 @@
+export { syncAllTables } from './sync';

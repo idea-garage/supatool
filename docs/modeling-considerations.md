@@ -102,16 +102,17 @@ security:
 ### モデル・テーブル・ビュー等のツリー構造例
 ```yaml
 models:
-  user:
-    tables:
-      profiles:
-        fields: ...
-      settings:
-        fields: ...
-    views:
-      user_summary: ...
-    security:
-      # モデル単位のセキュリティ
+  dataSchema:
+    user:
+      tables:
+        profiles:
+          fields: ...
+        settings:
+          fields: ...
+  views:
+  user_summary: ...
+  security:
+    # モデル単位のセキュリティ
 roles:
   - admin
   - user

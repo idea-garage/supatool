@@ -12,6 +12,8 @@ import { generateTypesFromModel } from '../generator/typeGenerator';
 import { generateCrudFromModel } from '../generator/crudGenerator';
 import { generateSqlFromModel } from '../generator/sqlGenerator';
 import { generateRlsSqlFromModel } from '../generator/rlsGenerator';
+import { syncAllTables, resolveConfig, createConfigTemplate } from '../sync';
+
 import fs from 'fs';
 import path from 'path';
 
@@ -21,6 +23,57 @@ program
   .name('supatool')
   .description('Supatool CLI')
   .version(version);
+
+// sync サブコマンド
+program
+  .command('sync')
+  .description('SupabaseのDBスキーマとローカルSQLファイルを同期')
+  .option('-c, --connection <string>', 'Supabase接続文字列')
+  .option('-d, --dir <path>', 'ローカルスキーマディレクトリ（デフォルト: ./supabase/schemas）')
+  .option('-t, --tables <pattern>', 'テーブルパターン（ワイルドカード対応）')
+  .option('--config <path>', '設定ファイルパス')
+  .option('-f, --force', '確認なしで上書き')
+  .action(async (options) => {
+    const config = resolveConfig({
+      connectionString: options.connection,
+      schemaDir: options.dir,
+      tablePattern: options.tables
+    }, options.config);
+    
+    if (!config.connectionString) {
+      console.error('接続文字列が必要です。以下のいずれかの方法で設定してください:');
+      console.error('1. --connection オプション');
+      console.error('2. 環境変数 SUPABASE_CONNECTION_STRING');
+      console.error('3. 環境変数 DATABASE_URL'); 
+      console.error('4. 設定ファイル supatool.config.json');
+      console.error('\n設定ファイル雛形を作成: supatool config:init');
+      process.exit(1);
+    }
+    
+    try {
+      await syncAllTables({
+        connectionString: config.connectionString,
+        schemaDir: config.schemaDir,
+        tablePattern: config.tablePattern,
+        force: options.force
+      });
+      console.log('✅ 同期が完了しました\n');
+    } catch (error) {
+      console.error('⚠️ 同期エラー:', error);
+      process.exit(1);
+    }
+  });
+
+
+
+// config:init サブコマンド
+program
+  .command('config:init')
+  .description('設定ファイル雛形を生成')
+  .option('-o, --out <path>', '出力先パス', 'supatool.config.json')
+  .action((options) => {
+    createConfigTemplate(options.out);
+  });
 
 // gen:types サブコマンド
 program

@@ -142,4 +142,4 @@ This project is inspired by and made possible thanks to the amazing work of [Sup
 ### v0.2.0
 - Added `gen:` commands for code and schema generation
 - Enhanced `create` command
-- Introduced model schema support (`schemas/supatool-model.schema.ts`)
+- Introduced model schema support (`schemas/supatool-data.schema.ts`)

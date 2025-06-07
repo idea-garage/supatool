@@ -1,6 +1,4 @@
-// supatool物理データスキーマ定義（フロント・バックエンド共通利用）
-// 例: import { SUPATOOL_DATA_SCHEMA } from '@shared/schemas/supatool-model.schema';
-// バリデーション例: ajv.compile(SUPATOOL_DATA_SCHEMA)
+// supatool物理データスキーマ定義
 
 export const SUPATOOL_DATA_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -12,7 +10,6 @@ export const SUPATOOL_DATA_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          description: { type: 'string' },
           fields: {
             type: 'object',
             properties: {},
@@ -22,8 +19,7 @@ export const SUPATOOL_DATA_SCHEMA = {
                 type: { type: 'string' },
                 primary: { type: 'boolean' },
                 notNull: { type: 'boolean' },
-                default: {},
-                label: { type: 'string' }
+                default: {}
               },
               required: ['type']
             }
@@ -41,11 +37,9 @@ export const SUPATOOL_DATA_SCHEMA = {
           },
           modelType: { type: 'string' },
           mainModel: { type: 'boolean' },
-          original: { type: 'string' },
-          raw: { type: 'string' },
-          japanese: { type: 'string' }
+          tableName: { type: 'string' }
         },
-        required: ['description', 'fields']
+        required: ['fields']
       }
     },
     roles: {

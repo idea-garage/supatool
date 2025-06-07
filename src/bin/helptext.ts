@@ -35,10 +35,10 @@ Examples:
 
 // Model Schema Usage
 export const modelSchemaHelp = `
-Model Schema Usage (schemas/supatool-model.schema.ts):
+Model Schema Usage (schemas/supatool-data.schema.ts):
 
 - Import in TypeScript:
-  import { SUPATOOL_MODEL_SCHEMA } from 'supatool/schemas/supatool-model.schema';
+  import { SUPATOOL_MODEL_SCHEMA } from 'supatool/schemas/supatool-data.schema';
 
 - Validate with ajv:
   import Ajv from 'ajv';

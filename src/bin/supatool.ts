@@ -13,6 +13,7 @@ import { generateCrudFromModel } from '../generator/crudGenerator';
 import { generateSqlFromModel } from '../generator/sqlGenerator';
 import { generateRlsSqlFromModel } from '../generator/rlsGenerator';
 import { syncAllTables, resolveConfig, createConfigTemplate } from '../sync';
+import { extractDefinitions } from '../sync/definitionExtractor';
 
 import fs from 'fs';
 import path from 'path';
@@ -24,47 +25,59 @@ program
   .description('Supatool CLI')
   .version(version);
 
-// sync サブコマンド
+
+
+// extract command
 program
-  .command('sync')
-  .description('SupabaseのDBスキーマとローカルSQLファイルを同期')
-  .option('-c, --connection <string>', 'Supabase接続文字列')
-  .option('-d, --dir <path>', 'ローカルスキーマディレクトリ（デフォルト: ./supabase/schemas）')
-  .option('-t, --tables <pattern>', 'テーブルパターン（ワイルドカード対応）')
-  .option('--config <path>', '設定ファイルパス')
-  .option('-f, --force', '確認なしで上書き')
+  .command('extract')
+  .description('Extract and categorize database objects from Supabase')
+  .option('-c, --connection <string>', 'Supabase connection string')
+  .option('-o, --output-dir <path>', 'Output directory', './supabase/schemas')
+  .option('-t, --tables <pattern>', 'Table pattern with wildcards', '*')
+  .option('--tables-only', 'Extract only table definitions')
+  .option('--views-only', 'Extract only view definitions')
+  .option('--all', 'Extract all DB objects (tables, views, RLS, functions, triggers, cron, types)')
+  .option('--no-separate', 'Output all objects in same directory')
+  .option('--schema <schemas>', 'Target schemas, comma-separated (default: public)')
+  .option('--config <path>', 'Configuration file path')
+  .option('-f, --force', 'Force overwrite without confirmation')
   .action(async (options) => {
     const config = resolveConfig({
-      connectionString: options.connection,
-      schemaDir: options.dir,
-      tablePattern: options.tables
+      connectionString: options.connection
     }, options.config);
     
     if (!config.connectionString) {
-      console.error('接続文字列が必要です。以下のいずれかの方法で設定してください:');
-      console.error('1. --connection オプション');
-      console.error('2. 環境変数 SUPABASE_CONNECTION_STRING');
-      console.error('3. 環境変数 DATABASE_URL'); 
-      console.error('4. 設定ファイル supatool.config.json');
-      console.error('\n設定ファイル雛形を作成: supatool config:init');
+      console.error('Connection string is required. Set it using one of:');
+      console.error('1. --connection option');
+      console.error('2. SUPABASE_CONNECTION_STRING environment variable');
+      console.error('3. DATABASE_URL environment variable');
+      console.error('4. supatool.config.json configuration file');
       process.exit(1);
     }
     
     try {
-      await syncAllTables({
+      // --schema オプションの処理
+      let schemas = ['public']; // デフォルト
+      if (options.schema) {
+        schemas = options.schema.split(',').map((s: string) => s.trim());
+      }
+
+      await extractDefinitions({
         connectionString: config.connectionString,
-        schemaDir: config.schemaDir,
-        tablePattern: config.tablePattern,
-        force: options.force
+        outputDir: options.outputDir,
+        separateDirectories: options.separate !== false,
+        tablesOnly: options.tablesOnly,
+        viewsOnly: options.viewsOnly,
+        all: options.all,
+        tablePattern: options.tables,
+        force: options.force,
+        schemas: schemas
       });
-      console.log('✅ 同期が完了しました\n');
     } catch (error) {
-      console.error('⚠️ 同期エラー:', error);
+      console.error('⚠️ Extraction error:', error);
       process.exit(1);
     }
   });
-
-
 
 // config:init サブコマンド
 program
@@ -89,12 +102,12 @@ program
 // gen:crud サブコマンド
 program
   .command('gen:crud <modelPath>')
-  .description('モデルYAMLからCRUD関数TypeScriptコードを生成')
+  .description('Generate CRUD TypeScript code from model YAML')
   .option('-o, --out <dir>', '出力先ディレクトリ', 'docs/generated/crud')
   .action((modelPath, options) => {
     const model = parseModelYaml(modelPath);
     generateCrudFromModel(model, options.out);
-    console.log('CRUD関数TypeScriptコードを出力:', options.out);
+          console.log('Generated CRUD TypeScript code:', options.out);
   });
 
 // gen:docs サブコマンド

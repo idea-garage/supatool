@@ -342,41 +342,41 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
     // ローディングアニメーション停止
     clearInterval(spinnerInterval);
     const totalTime = Math.floor((Date.now() - startTime) / 1000);
-    process.stdout.write(`\rスキーマ取得完了 (${totalTime}s)                    \n`);
+    process.stdout.write(`\rSchema fetch completed (${totalTime}s)                    \n`);
 
     await client.end();
     
   } catch (error) {
-    console.error('❌ リモートスキーマ取得エラー:');
+    console.error('❌ Remote schema fetch error:');
     
     if (error instanceof Error) {
       if (error.message.includes('ENOTFOUND')) {
-        console.error('🌐 DNS解決エラー: ホスト名が見つかりません');
-        console.error('💡 確認事項:');
-        console.error('   - インターネット接続は正常ですか？');
-        console.error('   - Supabaseプロジェクトの接続文字列は正しいですか？');
+        console.error('🌐 DNS resolution error: Host not found');
+        console.error('💡 Check:');
+        console.error('   - Is your internet connection working?');
+        console.error('   - Is your Supabase project connection string correct?');
       } else if (error.message.includes('authentication failed')) {
-        console.error('🔐 認証エラー: ユーザー名またはパスワードが間違っています');
+        console.error('🔐 Authentication error: Incorrect username or password');
       } else if (error.message.includes('SASL') || error.message.includes('SCRAM')) {
-        console.error('🔐 SASL認証エラー: パスワードまたは接続設定に問題があります');
-        console.error('💡 Session pooler接続の確認事項:');
-        console.error('   - データベースパスワードをSupabaseダッシュボードでリセットしてください');
-        console.error('   - 新しいパスワードで接続文字列を更新してください');
-        console.error('   - パスワードに特殊文字が含まれている場合、URLエンコードが必要です');
-        console.error('   - プロジェクトが一時停止していないか確認してください');
-        console.error('   - Supabaseダッシュボード → Settings → Database → Reset database password');
+        console.error('🔐 SASL authentication error: Password or connection settings issue');
+        console.error('💡 Session pooler connection checklist:');
+        console.error('   - Reset database password in Supabase dashboard');
+        console.error('   - Update connection string with new password');
+        console.error('   - URL encode special characters in password if needed');
+        console.error('   - Ensure project is not paused');
+        console.error('   - Supabase Dashboard → Settings → Database → Reset database password');
       } else if (error.message.includes('connect ETIMEDOUT')) {
-        console.error('⏰ 接続タイムアウト: データベースサーバーに到達できません');
+        console.error('⏰ Connection timeout: Cannot reach database server');
       } else {
         console.error(`🐛 ${error.message}`);
       }
     }
     
-    console.error('\n📖 Session pooler接続の設定:');
-    console.error('1. Supabaseダッシュボード → Settings → Database');
-    console.error('2. "Session pooler" タブを選択');
-    console.error('3. パスワードをリセット（Reset database password）');
-    console.error('4. 新しい接続文字列を.env.localに設定');
+    console.error('\n📖 Session pooler connection setup:');
+    console.error('1. Supabase Dashboard → Settings → Database');
+    console.error('2. Select "Session pooler" tab');
+    console.error('3. Reset password (Reset database password)');
+    console.error('4. Set new connection string in .env.local');
     
     throw error;
   }

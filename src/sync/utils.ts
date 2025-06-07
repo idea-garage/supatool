@@ -43,14 +43,14 @@ export function askUserConfirmation(
       } else if (lowerKey === 'n' || key === '\r' || key === '\n' || key === '\u0003') {
         // n、Enter、または Ctrl+C
         if (key === '\u0003') {
-          console.log('\n中断されました');
+          console.log('\nOperation cancelled');
           process.exit(0);
         }
         console.log(lowerKey === 'n' ? 'n' : 'N');
         resolve(false);
       } else {
         // 無効なキー：デフォルトでfalse
-        console.log(`${key} (無効な入力、Nとして処理)`);
+        console.log(`${key} (invalid input, treating as N)`);
         resolve(false);
       }
     };

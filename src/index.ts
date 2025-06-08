@@ -185,13 +185,13 @@ const toUpperCamelCase = (str: string) => {
 const crudTemplate = (typeName: string, fields: any[], isView: boolean) => {
 
     const upperCamelTypeName = toUpperCamelCase(typeName);
-    const selectByIdFunctionName = 'select' + upperCamelTypeName + 'RowById';
-    const selectFilteredRowsFunctionName = 'select' + upperCamelTypeName + 'RowsWithFilters';
-    const selectFilteredSingleRowFunctionName = 'select' + upperCamelTypeName + 'SingleRowWithFilters';
-    const insertFunctionName = 'insert' + upperCamelTypeName + 'Row';
+    const getByIdFunctionName = 'select' + upperCamelTypeName + 'RowById';
+    const getByFiltersFunctionName = 'select' + upperCamelTypeName + 'RowsWithFilters';
+    const getSingleByFiltersFunctionName = 'select' + upperCamelTypeName + 'SingleRowWithFilters';
+    const createFunctionName = 'insert' + upperCamelTypeName + 'Row';
     const updateFunctionName = 'update' + upperCamelTypeName + 'Row';
     const deleteFunctionName = 'delete' + upperCamelTypeName + 'Row';
-    const idType = fields.find((field: any) => field.name === 'id')?.type;
+    const idType = fields.find((field: any) => field.name === 'id')?.type || 'string';
     const hasIdColumn = idType !== undefined; // Check if 'id' column exists
 
     const exportHeaders = 
@@ -209,17 +209,29 @@ type Filters = Record<string, FilterTypesValue | FilterTypesValue[]>;
 const exportSelectById = 
 `
 // Read single row using id
-async function ${selectByIdFunctionName}(id: ${idType}): Promise<${typeName} | ${typeName}[]> {
-    if (id !== undefined) {
+export async function ${getByIdFunctionName}({ id }: { id: ${idType} }): Promise<${typeName} | null> {
+    if (!id) {
+        throw new Error('ID is required');
+    }
+    try {
         const result = await supabase
             .from('${typeName.toLowerCase()}')
             .select('*')
             .eq('id', id)
             .single();
+        
+        if (result.error) {
+            if (result.error.code === 'PGRST116') {
+                return null;
+            }
+            throw new Error(\`Failed to fetch ${typeName}: \${result.error.message}\`);
+        }
+        
         return result.data as ${typeName};
+    } catch (error) {
+        console.error('Error in ${getByIdFunctionName}:', error);
+        throw error;
     }
-    const result = await supabase.from('${typeName.toLowerCase()}').select('*');
-    return result.data as ${typeName}[];
 }
 `;
 
@@ -279,21 +291,44 @@ function applyFilters(query: any, filters: Filters): any {
 }
 
 // Read multiple rows with dynamic filters
-async function ${selectFilteredRowsFunctionName}(filters: Filters = {}): Promise<${typeName}[]> {
-    let query = supabase.from('${typeName.toLowerCase()}').select('*');
-    query = applyFilters(query, filters);
+export async function ${getByFiltersFunctionName}({ filters }: { filters: Filters }): Promise<${typeName}[]> {
+    try {
+        let query = supabase.from('${typeName.toLowerCase()}').select('*');
+        query = applyFilters(query, filters);
 
-    const result = await query;
-    return result.data as ${typeName}[];
+        const result = await query;
+        
+        if (result.error) {
+            throw new Error(\`Failed to fetch ${typeName}: \${result.error.message}\`);
+        }
+        
+        return (result.data as unknown as ${typeName}[]) || [];
+    } catch (error) {
+        console.error('Error in ${getByFiltersFunctionName}:', error);
+        throw error;
+    }
 }
 
 // Read a single row with dynamic filters
-async function ${selectFilteredSingleRowFunctionName}(filters: Filters = {}): Promise<${typeName}> {
-    let query = supabase.from('${typeName.toLowerCase()}').select('*');
-    query = applyFilters(query, filters).single();
+export async function ${getSingleByFiltersFunctionName}({ filters }: { filters: Filters }): Promise<${typeName} | null> {
+    try {
+        let query = supabase.from('${typeName.toLowerCase()}').select('*');
+        query = applyFilters(query, filters).single();
 
-    const result = await query;
-    return result.data as unknown as ${typeName};
+        const result = await query;
+        
+        if (result.error) {
+            if (result.error.code === 'PGRST116') {
+                return null;
+            }
+            throw new Error(\`Failed to fetch ${typeName}: \${result.error.message}\`);
+        }
+        
+        return result.data as unknown as ${typeName};
+    } catch (error) {
+        console.error('Error in ${getSingleByFiltersFunctionName}:', error);
+        throw error;
+    }
 }
 `
 
@@ -301,48 +336,101 @@ async function ${selectFilteredSingleRowFunctionName}(filters: Filters = {}): Pr
 const exportInsertOperation = isView ? '' : 
 `
 // Create Function
-async function ${insertFunctionName}(data: TablesInsert<'${typeName}'>): Promise<${typeName}> {
-    const result = await supabase
-        .from('${typeName}')
-        .insert([data])
-        .select()
-        .single();
-
-    if (result.data) {
-        return result.data as ${typeName};
+export async function ${createFunctionName}({ data }: { data: TablesInsert<'${typeName}'> }): Promise<${typeName}> {
+    if (!data) {
+        throw new Error('Data is required for creation');
     }
-    throw new Error('Failed to insert data');
+    try {
+        const result = await supabase
+            .from('${typeName}')
+            .insert([data])
+            .select()
+            .single();
+
+        if (result.error) {
+            throw new Error(\`Failed to create ${typeName}: \${result.error.message}\`);
+        }
+        
+        if (!result.data) {
+            throw new Error('No data returned after creation');
+        }
+        
+        return result.data as ${typeName};
+    } catch (error) {
+        console.error('Error in ${createFunctionName}:', error);
+        throw error;
+    }
 }
 `;
 
 const exportUpdateOperation = isView ? '' : 
 `
 // Update Function
-async function ${updateFunctionName}(data: TablesUpdate<'${typeName}'> & { id: ${idType} }): Promise<${typeName}> {
-    const result = await supabase.from('${typeName.toLowerCase()}').update(data).eq('id', data.id).select().single();
-    if (result.data) {
-        return result.data as ${typeName};
+export async function ${updateFunctionName}({ id, data }: { id: ${idType}; data: TablesUpdate<'${typeName}'> }): Promise<${typeName}> {
+    if (!id) {
+        throw new Error('ID is required for update');
     }
-    throw new Error('Failed to update data');
+    if (!data || Object.keys(data).length === 0) {
+        throw new Error('Update data is required');
+    }
+    try {
+        const result = await supabase
+            .from('${typeName.toLowerCase()}')
+            .update(data)
+            .eq('id', id)
+            .select()
+            .single();
+            
+        if (result.error) {
+            if (result.error.code === 'PGRST116') {
+                throw new Error(\`${typeName} with ID \${id} not found\`);
+            }
+            throw new Error(\`Failed to update ${typeName}: \${result.error.message}\`);
+        }
+        
+        if (!result.data) {
+            throw new Error(\`${typeName} with ID \${id} not found\`);
+        }
+        
+        return result.data as ${typeName};
+    } catch (error) {
+        console.error('Error in ${updateFunctionName}:', error);
+        throw error;
+    }
 }
 `;
 
 const exportDeleteOperation = isView ? '' : 
 `
 // Delete Function
-async function ${deleteFunctionName}(id: ${idType}): Promise<${typeName}> {
-    const result = await supabase.from('${typeName.toLowerCase()}').delete().eq('id', id).select().single();
-    if (result.data) {
-        return result.data as ${typeName};
+export async function ${deleteFunctionName}({ id }: { id: ${idType} }): Promise<boolean> {
+    if (!id) {
+        throw new Error('ID is required for deletion');
     }
-    throw new Error('Failed to delete data');
+    try {
+        const result = await supabase
+            .from('${typeName.toLowerCase()}')
+            .delete()
+            .eq('id', id);
+            
+        if (result.error) {
+            throw new Error(\`Failed to delete ${typeName}: \${result.error.message}\`);
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Error in ${deleteFunctionName}:', error);
+        throw error;
+    }
 }
 `;
+
+
 
 // Export all functions
 const exportAll = 
 `
-export { ${selectFilteredRowsFunctionName}, ${selectFilteredSingleRowFunctionName}${hasIdColumn ? ', ' + selectByIdFunctionName : ''}${isView ? '' : ', ' + insertFunctionName + ', ' + updateFunctionName + ', ' + deleteFunctionName} };
+// All functions are exported individually above
 `;
 
 // Return all the code

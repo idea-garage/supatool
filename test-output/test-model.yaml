@@ -1,0 +1,41 @@
+
+models:
+  - name: ブログ
+    tables:
+      posts:
+        description: "ブログ投稿"
+        fields:
+          id:
+            type: uuid
+            primary: true
+            default: "gen_random_uuid()"
+          title:
+            type: text
+            notNull: true
+            label: "タイトル"
+          content:
+            type: text
+            label: "内容"
+          created_at:
+            type: timestamptz
+            default: "now()"
+          updated_at:
+            type: timestamptz
+            default: "now()"
+      users:
+        description: "ユーザー"
+        fields:
+          id:
+            type: uuid
+            primary: true
+            default: "gen_random_uuid()"
+          email:
+            type: text
+            notNull: true
+            label: "メールアドレス"
+          name:
+            type: text
+            label: "名前"
+          created_at:
+            type: timestamptz
+            default: "now()"

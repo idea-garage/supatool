@@ -2,6 +2,7 @@
 
 A CLI tool that automatically generates TypeScript CRUD code from Supabase type definitions.
 
+
 ## Install
 
 ```
@@ -155,7 +156,7 @@ CRUD utility files for the `apps` table will be generated in `src/integrations/s
 You can import and use these functions in your application as follows:
 
 ```ts
-// Example: Using CRUD functions for the apps table
+// Example: Using CRUD functions for the apps table (v0.3.0+)
 import {
   selectAppsRowsWithFilters,
   selectAppsSingleRowWithFilters,
@@ -165,23 +166,26 @@ import {
   deleteAppsRow,
 } from 'src/integrations/supabase/crud-autogen/apps';
 
-// Get multiple rows with filters
-const apps = await selectAppsRowsWithFilters({ status: 'active' });
+// Select multiple rows with filters (NEW: destructuring parameters)
+const apps = await selectAppsRowsWithFilters({ filters: { status: 'active' } });
 
-// Get a single row with filters
-const app = await selectAppsSingleRowWithFilters({ id: 'your-app-id' });
+// Select a single row with filters
+const app = await selectAppsSingleRowWithFilters({ filters: { id: 'your-app-id' } });
 
-// Get by ID
-const appById = await selectAppsRowById('your-app-id');
+// Select by ID (NEW: destructuring parameters)
+const appById = await selectAppsRowById({ id: 'your-app-id' });
 
-// Create new row
-const newApp = await insertAppsRow({ name: 'New App', status: 'active' });
+// Insert new row (NEW: destructuring parameters)
+const newApp = await insertAppsRow({ data: { name: 'New App', status: 'active' } });
 
-// Update row
-const updatedApp = await updateAppsRow({ id: 'your-app-id', name: 'Updated Name' });
+// Update row (NEW: destructuring parameters)
+const updatedApp = await updateAppsRow({ 
+  id: 'your-app-id', 
+  data: { name: 'Updated Name' } 
+});
 
-// Delete row
-const deletedApp = await deleteAppsRow('your-app-id');
+// Delete row (NEW: destructuring parameters)
+const success = await deleteAppsRow({ id: 'your-app-id' });
 ```
 
 - All functions are async and return the corresponding row type.
@@ -318,6 +322,8 @@ Comments appear in:
 ## Changelog
 
 ### v0.3.0
+
+**NEW Features:**
 - **NEW**: `extract` command for database schema extraction
 - **NEW**: Full compliance with Supabase declarative database schemas workflow
 - **NEW**: AI-friendly index.md and llms.txt generation for better schema understanding
@@ -326,6 +332,20 @@ Comments appear in:
 - **NEW**: Pattern matching for selective extraction
 - **ENHANCED**: Support for all database object types (RLS, functions, triggers, cron jobs, custom types)
 - **ENHANCED**: Flexible output options with --no-separate compatibility
+
+**Enhanced Error Handling:**
+- Comprehensive try-catch blocks for all CRUD operations
+- Enhanced null/undefined checks with proper fallbacks
+- Detailed error messages with contextual information
+- Special handling for PGRST116 errors (record not found)
+- Parameter validation for required fields
+- Proper error logging and debugging support
+
+**Breaking Changes:**
+- **Function Parameter Format**: All CRUD functions now use destructuring assignment
+  - Before: `selectTableRowById(id: string)`
+  - After: `selectTableRowById({ id }: { id: string })`
+- **Type Safety**: Enhanced TypeScript type annotations for all functions
 
 ### v0.2.0
 - Added `gen:` commands for code and schema generation

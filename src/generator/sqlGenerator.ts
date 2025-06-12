@@ -44,6 +44,7 @@ export function generateSqlFromModel(model: any, outPath: string) {
     let userIdCount = userIdFields.length;
     sql += `CREATE TABLE ${tableName} (\n`;
     const colDefs = [];
+    const tableConstraints = [];
     for (const [colName, col] of Object.entries(t.fields || {})) {
       const c = col as any;
       let actualColName = colName;
@@ -59,16 +60,21 @@ export function generateSqlFromModel(model: any, outPath: string) {
       }
       let def = `  ${actualColName} ${toSqlType(c.type, actualColName)}`;
       if (c.primary) def += ' PRIMARY KEY';
+      if (c.unique) def += ' UNIQUE';
       if (c.notNull) def += ' NOT NULL';
       if (c.default) def += ` DEFAULT ${c.default}`;
-      // 外部キー制約はREFERENCESで付与
+      // 外部キー制約はテーブル末尾に付与するため保留
+      colDefs.push(def);
+
+      // 外部キー制約をテーブル末尾に格納
       if (c.ref) {
         const refTable = c.ref.split('.')[0];
-        def += ` REFERENCES ${refTable}(id)`;
+        tableConstraints.push(`  FOREIGN KEY (${actualColName}) REFERENCES ${refTable}(id)`);
       }
-      colDefs.push(def);
     }
-    sql += colDefs.join(',\n') + '\n);\n\n';
+    // 列定義 + テーブルレベル制約を結合
+    const defs = [...colDefs, ...tableConstraints];
+    sql += defs.join(',\n') + '\n);\n\n';
     // ALTER TABLEによる外部キー制約は出力しない
     sql += '\n';
   }
@@ -79,12 +85,19 @@ function toSqlType(type: string | undefined, colName: string): string {
   if (!type) return 'text';
   // 時刻列は必ずtimestamptz
   if (type === 'timestamp' || type === 'timestamptz' || colName.endsWith('_at')) return 'timestamptz';
+  // vector型サポート
+  if (/^vector(\(\d+\))?$/i.test(type)) return type;
+  // extensions.vector → vector へ変換
+  const extVectorMatch = type.match(/^extensions\.vector(\(\d+\))?$/i);
+  if (extVectorMatch) {
+    return `vector${extVectorMatch[1] || ''}`;
+  }
   switch (type) {
     case 'uuid': return 'uuid';
     case 'text': return 'text';
     case 'int':
     case 'integer': return 'integer';
     case 'boolean': return 'boolean';
-    default: return 'text';
+    default: return type; // 指定が未知の場合はそのまま返す
   }
 } 

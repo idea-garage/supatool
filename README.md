@@ -285,6 +285,43 @@ supatool extract --all -c "postgresql://..." -o supabase/schemas
 
 ## Changelog
 
+### v0.3.2
+
+- **ENHANCED**: Adjust for extensions(vector, geometry etc.)
+- **FIXED**: USER-DEFINED column types are now rendered with full type definitions (e.g. `vector(1536)`, `geometry(Point,4326)`).
+- **ADDED**: `FOREIGN KEY` constraints are now included as `CONSTRAINT ... FOREIGN KEY ... REFERENCES ...` inside generated `CREATE TABLE` statements.
+
+### v0.3.0
+
+**NEW Features:**
+- **NEW**: `extract` command for database schema extraction
+- **NEW**: Full compliance with Supabase declarative database schemas workflow
+- **NEW**: AI-friendly index.md and llms.txt generation for better schema understanding
+- **NEW**: Database comment extraction and integration
+- **NEW**: Organized directory structure (tables/, views/, rls/, rpc/)
+- **NEW**: Pattern matching for selective extraction
+- **ENHANCED**: Support for all database object types (RLS, functions, triggers, cron jobs, custom types)
+- **ENHANCED**: Flexible output options with --no-separate compatibility
+
+**Enhanced Error Handling:**
+- Comprehensive try-catch blocks for all CRUD operations
+- Enhanced null/undefined checks with proper fallbacks
+- Detailed error messages with contextual information
+- Special handling for PGRST116 errors (record not found)
+- Parameter validation for required fields
+- Proper error logging and debugging support
+
+**Breaking Changes:**
+- **Function Parameter Format**: All CRUD functions now use destructuring assignment
+  - Before: `selectTableRowById(id: string)`
+  - After: `selectTableRowById({ id }: { id: string })`
+- **Type Safety**: Enhanced TypeScript type annotations for all functions
+
+### v0.2.0
+- Added `gen:` commands for code and schema generation
+- Enhanced `create` command  
+- Introduced model schema support (`schemas/supatool-data.schema.ts`)
+
 ## Database Comments
 
 Supatool automatically extracts and includes PostgreSQL comments in all generated files. Comments enhance documentation and AI understanding of your schema.
@@ -318,36 +355,3 @@ Comments appear in:
 - [users](tables/users.sql) - User account information and authentication data
 - [posts](tables/posts.sql) - User-generated content and blog posts
 ```
-
-## Changelog
-
-### v0.3.0
-
-**NEW Features:**
-- **NEW**: `extract` command for database schema extraction
-- **NEW**: Full compliance with Supabase declarative database schemas workflow
-- **NEW**: AI-friendly index.md and llms.txt generation for better schema understanding
-- **NEW**: Database comment extraction and integration
-- **NEW**: Organized directory structure (tables/, views/, rls/, rpc/)
-- **NEW**: Pattern matching for selective extraction
-- **ENHANCED**: Support for all database object types (RLS, functions, triggers, cron jobs, custom types)
-- **ENHANCED**: Flexible output options with --no-separate compatibility
-
-**Enhanced Error Handling:**
-- Comprehensive try-catch blocks for all CRUD operations
-- Enhanced null/undefined checks with proper fallbacks
-- Detailed error messages with contextual information
-- Special handling for PGRST116 errors (record not found)
-- Parameter validation for required fields
-- Proper error logging and debugging support
-
-**Breaking Changes:**
-- **Function Parameter Format**: All CRUD functions now use destructuring assignment
-  - Before: `selectTableRowById(id: string)`
-  - After: `selectTableRowById({ id }: { id: string })`
-- **Type Safety**: Enhanced TypeScript type annotations for all functions
-
-### v0.2.0
-- Added `gen:` commands for code and schema generation
-- Enhanced `create` command  
-- Introduced model schema support (`schemas/supatool-data.schema.ts`)

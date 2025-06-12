@@ -812,20 +812,26 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
     primaryKeyResult,
     tableCommentResult,
     columnCommentsResult,
-    uniqueConstraintResult
+    uniqueConstraintResult,
+    foreignKeyResult
   ] = await Promise.all([
     // カラム情報を取得
     client.query(`
       SELECT 
-        column_name,
-        data_type,
-        character_maximum_length,
-        is_nullable,
-        column_default
-      FROM information_schema.columns 
-      WHERE table_schema = $1 
-        AND table_name = $2
-      ORDER BY ordinal_position
+        c.column_name,
+        c.data_type,
+        c.udt_name,
+        c.character_maximum_length,
+        c.is_nullable,
+        c.column_default,
+        pg_catalog.format_type(a.atttypid, a.atttypmod) AS full_type
+      FROM information_schema.columns c
+      JOIN pg_class cl ON cl.relname = c.table_name
+      JOIN pg_namespace ns ON ns.nspname = c.table_schema AND ns.oid = cl.relnamespace
+      JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attname = c.column_name
+      WHERE c.table_schema = $1 
+        AND c.table_name = $2
+      ORDER BY c.ordinal_position
     `, [schemaName, tableName]),
     
     // 主キー情報を取得
@@ -876,6 +882,26 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
         AND tc.constraint_type = 'UNIQUE'
       GROUP BY tc.constraint_name
       ORDER BY tc.constraint_name
+    `, [schemaName, tableName]),
+    
+    // FOREIGN KEY制約を取得
+    client.query(`
+      SELECT 
+        tc.constraint_name,
+        string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) as columns,
+        ccu.table_schema AS foreign_table_schema,
+        ccu.table_name AS foreign_table_name,
+        string_agg(ccu.column_name, ', ' ORDER BY kcu.ordinal_position) as foreign_columns
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu 
+        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.constraint_column_usage ccu 
+        ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+      WHERE tc.table_schema = $1
+        AND tc.table_name = $2
+        AND tc.constraint_type = 'FOREIGN KEY'
+      GROUP BY tc.constraint_name, ccu.table_schema, ccu.table_name
+      ORDER BY tc.constraint_name
     `, [schemaName, tableName])
   ]);
 
@@ -901,7 +927,9 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
   
   const columnDefs: string[] = [];
   for (const col of columnsResult.rows) {
-    let colDef = `  ${col.column_name} ${col.data_type.toUpperCase()}`;
+    const rawType: string = col.full_type ||
+      ((col.data_type === 'USER-DEFINED' && col.udt_name) ? col.udt_name : col.data_type);
+    let colDef = `  ${col.column_name} ${rawType}`;
     
     // 長さ指定
     if (col.character_maximum_length) {
@@ -932,6 +960,11 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
   // UNIQUE制約をCREATE TABLE内に追加
   for (const unique of uniqueConstraintResult.rows) {
     ddl += `,\n  CONSTRAINT ${unique.constraint_name} UNIQUE (${unique.columns})`;
+  }
+
+  // FOREIGN KEY制約をCREATE TABLE内に追加
+  for (const fk of foreignKeyResult.rows) {
+    ddl += `,\n  CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.columns}) REFERENCES ${fk.foreign_table_schema}.${fk.foreign_table_name} (${fk.foreign_columns})`;
   }
   
   ddl += '\n);\n';

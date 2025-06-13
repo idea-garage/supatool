@@ -261,14 +261,19 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
     let ddl = '';
     if (!row.comment) {
       ddl += `-- Function: ${functionSignature}\n`;
-      ddl += `-- COMMENT ON FUNCTION ${functionSignature} IS '_your_comment_here_';\n\n`;
     } else {
       ddl += `-- ${row.comment}\n`;
-      ddl += `COMMENT ON FUNCTION ${functionSignature} IS '${row.comment}';\n\n`;
     }
     
     // 関数定義を追加
-    ddl += row.definition;
+    ddl += row.definition + '\n\n';
+    
+    // COMMENT ON文を追加
+    if (!row.comment) {
+      ddl += `-- COMMENT ON FUNCTION ${functionSignature} IS '_your_comment_here_';\n\n`;
+    } else {
+      ddl += `COMMENT ON FUNCTION ${functionSignature} IS '${row.comment}';\n\n`;
+    }
     
     functions.push({
       name: row.name,
@@ -530,17 +535,23 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
     }
     
     if (ddl) {
-      // 型コメントを先頭に追加（スキーマ名を含む）
+      // 型コメントを先頭に追加
       let finalDdl = '';
       if (!row.comment) {
-          finalDdl += `-- Type: ${row.type_name}\n`;
-        finalDdl += `-- COMMENT ON TYPE ${row.schema_name}.${row.type_name} IS '_your_comment_here_';\n\n`;
+        finalDdl += `-- Type: ${row.type_name}\n`;
       } else {
         finalDdl += `-- ${row.comment}\n`;
-        finalDdl += `COMMENT ON TYPE ${row.schema_name}.${row.type_name} IS '${row.comment}';\n\n`;
       }
       
-      finalDdl += ddl;
+      // 型定義を追加
+      finalDdl += ddl + '\n\n';
+      
+      // COMMENT ON文を追加
+      if (!row.comment) {
+        finalDdl += `-- COMMENT ON TYPE ${row.schema_name}.${row.type_name} IS '_your_comment_here_';\n\n`;
+      } else {
+        finalDdl += `COMMENT ON TYPE ${row.schema_name}.${row.type_name} IS '${row.comment}';\n\n`;
+      }
       
       types.push({
         name: `${row.schema_name}_${row.type_name}`,
@@ -686,12 +697,11 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
           if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
             comment = viewCommentResult.rows[0].view_comment;
             ddl = `-- ${comment}\n`;
-            ddl += `COMMENT ON VIEW ${schemaName}.${name} IS '${comment}';\n\n`;
           } else {
             ddl = `-- View: ${name}\n`;
-            ddl += `-- COMMENT ON VIEW ${schemaName}.${name} IS '_your_comment_here_';\n\n`;
           }
-          
+
+          // ビュー定義を追加
           let ddlStart = `CREATE OR REPLACE VIEW ${name}`;
           
           // security_invoker設定をチェック
@@ -709,8 +719,15 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
             }
           }
           
-          ddl += `${ddlStart} AS\n${view.definition}`;
+          ddl += ddlStart + ' AS\n' + view.definition + ';\n\n';
           
+          // COMMENT ON文を追加
+          if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
+            ddl += `COMMENT ON VIEW ${schemaName}.${name} IS '${comment}';\n\n`;
+          } else {
+            ddl += `-- COMMENT ON VIEW ${schemaName}.${name} IS '_your_comment_here_';\n\n`;
+          }
+
           // ビューの作成時刻を取得（可能であれば）
           try {
             const viewStatsResult = await client.query(`
@@ -731,8 +748,7 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
           }
         }
       } catch (error) {
-        console.error(`Failed to fetch view definition: ${name}`, error);
-        return null;
+        // エラーの場合はコメントなし
       }
     }
 
@@ -914,17 +930,16 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
 
   // テーブルコメントを先頭に追加（スキーマ名を含む）
   let ddl = '';
+  
+  // テーブルコメントを先頭に追加
   if (tableCommentResult.rows.length > 0 && tableCommentResult.rows[0].table_comment) {
     ddl += `-- ${tableCommentResult.rows[0].table_comment}\n`;
-    ddl += `COMMENT ON TABLE ${schemaName}.${tableName} IS '${tableCommentResult.rows[0].table_comment}';\n\n`;
   } else {
     ddl += `-- Table: ${tableName}\n`;
-    ddl += `-- COMMENT ON TABLE ${schemaName}.${tableName} IS '_your_comment_here_';\n\n`;
   }
-
+  
   // CREATE TABLE文を生成
   ddl += `CREATE TABLE IF NOT EXISTS ${tableName} (\n`;
-  
   const columnDefs: string[] = [];
   for (const col of columnsResult.rows) {
     const rawType: string = col.full_type ||
@@ -967,9 +982,14 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
     ddl += `,\n  CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.columns}) REFERENCES ${fk.foreign_table_schema}.${fk.foreign_table_name} (${fk.foreign_columns})`;
   }
   
-  ddl += '\n);\n';
+  ddl += '\n);\n\n';
 
-  ddl += '\n';
+  // COMMENT ON文を追加
+  if (tableCommentResult.rows.length > 0 && tableCommentResult.rows[0].table_comment) {
+    ddl += `COMMENT ON TABLE ${schemaName}.${tableName} IS '${tableCommentResult.rows[0].table_comment}';\n\n`;
+  } else {
+    ddl += `-- COMMENT ON TABLE ${schemaName}.${tableName} IS '_your_comment_here_';\n\n`;
+  }
 
   // カラムコメントを追加（スキーマ名を含む）
   if (columnComments.size > 0) {

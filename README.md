@@ -285,6 +285,12 @@ supatool extract --all -c "postgresql://..." -o supabase/schemas
 
 ## Changelog
 
+### v0.3.3
+
+- **ENHANCED**: Improved SQL comment placement (moved to end of each SQL statement)
+- **ENHANCED**: Unified comment format for tables, views, functions, and custom types
+- **FIXED**: Preserved view `security_invoker` settings
+
 ### v0.3.2
 
 - **ENHANCED**: Adjust for extensions(vector, geometry etc.)

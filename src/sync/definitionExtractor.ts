@@ -176,10 +176,8 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
         let roles: string;
         if (Array.isArray(policy.roles)) {
           roles = policy.roles.join(', ');
-        } else if (typeof policy.roles === 'string') {
-          roles = policy.roles;
         } else {
-          // PostgreSQLの配列リテラル形式 "{role1,role2}" の場合
+          // PostgreSQLの配列リテラル形式 "{role1,role2}" または単純な文字列を処理
           roles = String(policy.roles)
             .replace(/[{}]/g, '') // 中括弧を除去
             .replace(/"/g, ''); // ダブルクォートを除去
@@ -265,8 +263,12 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
       ddl += `-- ${row.comment}\n`;
     }
     
-    // 関数定義を追加
-    ddl += row.definition + '\n\n';
+    // 関数定義を追加（セミコロンを確実に付与）
+    let functionDef = row.definition;
+    if (!functionDef.trim().endsWith(';')) {
+      functionDef += ';';
+    }
+    ddl += functionDef + '\n\n';
     
     // COMMENT ON文を追加
     if (!row.comment) {

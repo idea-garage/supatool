@@ -285,6 +285,12 @@ supatool extract --all -c "postgresql://..." -o supabase/schemas
 
 ## Changelog
 
+### v0.3.4
+
+- **FIXED**: Corrected RLS policy to proper format
+- **FIXED**: Ensured semicolon (;) is properly appended to function definitions
+- **FIXED**: Removed trailing whitespace from RLS template files
+
 ### v0.3.3
 
 - **ENHANCED**: Improved SQL comment placement (moved to end of each SQL statement)

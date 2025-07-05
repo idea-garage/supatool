@@ -52,7 +52,7 @@ models:
 `;
 
 // テスト用ディレクトリを作成
-const testDir = './test-output';
+const testDir = path.join(__dirname, 'test-output');
 if (!fs.existsSync(testDir)) {
   fs.mkdirSync(testDir, { recursive: true });
 }

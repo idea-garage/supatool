@@ -71,7 +71,7 @@ export type TablesUpdate<T extends keyof Database['public']['Tables']> = Databas
 `;
 
 // テスト用ディレクトリを作成
-const testDir = './test-advanced-output';
+const testDir = path.join(__dirname, 'test-advanced-output');
 const sharedDir = path.join(testDir, 'shared');
 if (!fs.existsSync(sharedDir)) {
   fs.mkdirSync(sharedDir, { recursive: true });

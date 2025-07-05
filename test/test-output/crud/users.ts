@@ -49,6 +49,8 @@ export async function selectUsersRowById({ id }: { id: string }): Promise<users 
 
 /** フィルターで複数件取得 */
 export async function selectUsersRowsWithFilters({ filters }: { filters: Filters }): Promise<users[]> {
+  // filtersのガード
+  if (!filters || typeof filters !== 'object') return [];
   try {
     let query = supabase.from('users').select('*');
     

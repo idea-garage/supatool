@@ -292,6 +292,7 @@ function applyFilters(query: any, filters: Filters): any {
 
 // Read multiple rows with dynamic filters
 export async function ${getByFiltersFunctionName}({ filters }: { filters: Filters }): Promise<${typeName}[]> {
+    if (!filters || typeof filters !== 'object') return [];
     try {
         let query = supabase.from('${typeName.toLowerCase()}').select('*');
         query = applyFilters(query, filters);
@@ -311,6 +312,7 @@ export async function ${getByFiltersFunctionName}({ filters }: { filters: Filter
 
 // Read a single row with dynamic filters
 export async function ${getSingleByFiltersFunctionName}({ filters }: { filters: Filters }): Promise<${typeName} | null> {
+    if (!filters || typeof filters !== 'object') return null;
     try {
         let query = supabase.from('${typeName.toLowerCase()}').select('*');
         query = applyFilters(query, filters).single();

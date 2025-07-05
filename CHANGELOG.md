@@ -41,3 +41,12 @@ All notable changes to this project will be documented in this file.
 - Table-level batch processing with configurable concurrency limits
 - Optimized progress display with carriage return positioning
 - Comprehensive error handling for individual table failures 
+
+## v0.3.5
+- Add: `supatool seed` command to export selected table data as AI-friendly seed JSON
+- Add: llms.txt (AI seed data index) auto-generated in supabase/seeds/ with each seed export
+- Change: llms.txt format improved (table name: file name (xx rows) #comment, with header info)
+- Change: CLI help text and documentation simplified and clarified
+- Change: README llms.txt example updated to match latest format
+- Fix: Output folder for seeds now uses yyyymmdd_hhmm_supatool format
+- Other minor improvements and bug fixes 

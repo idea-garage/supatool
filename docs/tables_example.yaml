@@ -1,0 +1,10 @@
+# tables.yaml サンプル
+# スキーマ指定なし（publicがデフォルト）
+tables:
+  - users
+  - posts
+
+# スキーマ指定あり
+tables:
+  - public.users
+  - app_data.logs 

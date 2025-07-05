@@ -1218,6 +1218,97 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     schemas = ['public']
   } = options;
 
+  // Node.jsのSSL証明書検証を無効化
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+  // 接続文字列の検証
+  if (!connectionString) {
+    throw new Error('接続文字列が設定されていません。以下のいずれかで設定してください:\n' +
+      '1. --connection オプション\n' +
+      '2. SUPABASE_CONNECTION_STRING 環境変数\n' +
+      '3. DATABASE_URL 環境変数\n' +
+      '4. supatool.config.json 設定ファイル');
+  }
+
+  // 接続文字列の形式検証
+  if (!connectionString.startsWith('postgresql://') && !connectionString.startsWith('postgres://')) {
+    throw new Error(`不正な接続文字列形式です: ${connectionString}\n` +
+      '正しい形式: postgresql://username:password@host:port/database');
+  }
+
+  // パスワード部分をURLエンコード
+  let encodedConnectionString = connectionString;
+  console.log('🔍 元の接続文字列:', connectionString);
+  
+  try {
+    // パスワードに@が含まれる場合の特別処理
+    if (connectionString.includes('@') && connectionString.split('@').length > 2) {
+      console.log('⚠️ パスワードに@が含まれているため特別処理を実行');
+      // 最後の@を区切り文字として使用
+      const parts = connectionString.split('@');
+      const lastPart = parts.pop(); // 最後の部分（host:port/database）
+      const firstParts = parts.join('@'); // 最初の部分（postgresql://user:password）
+      
+      console.log('   分割結果:');
+      console.log('   前半部分:', firstParts);
+      console.log('   後半部分:', lastPart);
+      
+      // パスワード部分をエンコード
+      const colonIndex = firstParts.lastIndexOf(':');
+      if (colonIndex > 0) {
+        const protocolAndUser = firstParts.substring(0, colonIndex);
+        const password = firstParts.substring(colonIndex + 1);
+        const encodedPassword = encodeURIComponent(password);
+        encodedConnectionString = `${protocolAndUser}:${encodedPassword}@${lastPart}`;
+        
+        console.log('   エンコード結果:');
+        console.log('   プロトコル+ユーザー:', protocolAndUser);
+        console.log('   元パスワード:', password);
+        console.log('   エンコードパスワード:', encodedPassword);
+        console.log('   最終接続文字列:', encodedConnectionString);
+      }
+    } else {
+      console.log('✅ 通常のURL解析を実行');
+      // 通常のURL解析
+      const url = new URL(connectionString);
+      
+      // ユーザー名にドットが含まれる場合の処理
+      if (url.username && url.username.includes('.')) {
+        console.log(`ユーザー名（ドット含む）: ${url.username}`);
+      }
+      
+      if (url.password) {
+        // パスワード部分のみをエンコード
+        const encodedPassword = encodeURIComponent(url.password);
+        url.password = encodedPassword;
+        encodedConnectionString = url.toString();
+        console.log('   パスワードエンコード:', encodedPassword);
+      }
+    }
+    
+    // Supabase接続用にSSL設定を追加
+    if (!encodedConnectionString.includes('sslmode=')) {
+      const separator = encodedConnectionString.includes('?') ? '&' : '?';
+      encodedConnectionString += `${separator}sslmode=require`;
+      console.log('   SSL設定を追加:', encodedConnectionString);
+    }
+    
+    // デバッグ情報を表示（パスワードは隠す）
+    const debugUrl = new URL(encodedConnectionString);
+    const maskedPassword = debugUrl.password ? '*'.repeat(debugUrl.password.length) : '';
+    debugUrl.password = maskedPassword;
+    console.log('🔍 接続情報:');
+    console.log(`   ホスト: ${debugUrl.hostname}`);
+    console.log(`   ポート: ${debugUrl.port}`);
+    console.log(`   データベース: ${debugUrl.pathname.slice(1)}`);
+    console.log(`   ユーザー: ${debugUrl.username}`);
+    console.log(`   SSL: ${debugUrl.searchParams.get('sslmode') || 'require'}`);
+  } catch (error) {
+    // URL解析に失敗した場合は元の文字列を使用
+    console.warn('接続文字列のURL解析に失敗しました。特殊文字が含まれている可能性があります。');
+    console.warn('エラー詳細:', error instanceof Error ? error.message : String(error));
+  }
+
   const fs = await import('fs');
   const readline = await import('readline');
 
@@ -1246,9 +1337,20 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
   const { default: ora } = await import('ora');
   const spinner = ora('Connecting to database...').start();
 
-  const client = new Client({ connectionString });
+  const client = new Client({ 
+    connectionString: encodedConnectionString,
+    ssl: {
+      rejectUnauthorized: false,
+      ca: undefined
+    }
+  });
   
   try {
+    // 接続前のデバッグ情報
+    console.log('🔧 接続設定:');
+    console.log(`   SSL: rejectUnauthorized=false`);
+    console.log(`   接続文字列長: ${encodedConnectionString.length}`);
+    
     await client.connect();
     spinner.text = 'Connected to database';
 

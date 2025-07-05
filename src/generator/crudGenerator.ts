@@ -84,6 +84,8 @@ export function generateCrudFromModel(model: any, outDir: string) {
     // フィルターで検索関数
     code += `/** フィルターで複数件取得 */\n`;
     code += `export async function select${capitalizedName}RowsWithFilters({ filters }: { filters: Filters }): Promise<${tableName}[]> {\n`;
+    code += `  // filtersのガード\n`;
+    code += `  if (!filters || typeof filters !== 'object') return [];\n`;
     code += `  try {\n`;
     code += `    let query = supabase.from('${tableName}').select('*');\n`;
     code += `    \n`;

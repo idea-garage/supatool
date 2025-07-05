@@ -2,6 +2,14 @@
 
 A CLI tool that automatically generates TypeScript CRUD code from Supabase type definitions.
 
+## Features
+- Extract and categorize all database objects (tables, views, RLS, functions, triggers) from Supabase
+- Generate TypeScript CRUD functions from Supabase types or model YAML
+- Output human-readable and AI-friendly schema/index files
+- Flexible environment/configuration and batch processing
+- Simple CLI with help and documentation
+
+> For all new features and version history, see [CHANGELOG.md](./CHANGELOG.md).
 
 ## Install
 
@@ -15,7 +23,7 @@ pnpm add -g supatool
 
 ## Usage
 
-### 1. Extract Database Schema (NEW in v0.3.0)
+### Extract Database Schema
 
 Extract and categorize all database objects from your Supabase project:
 
@@ -50,7 +58,7 @@ supabase/schemas/
 └── rpc/                  # Functions & triggers
 ```
 
-### 2. Generate CRUD Code
+### Generate CRUD Code
 
 Generate TypeScript CRUD functions from Supabase types:
 
@@ -67,7 +75,7 @@ supatool gen:crud model.yaml
 
 **Output:** `src/integrations/supabase/crud-autogen/`
 
-### 3. Environment Configuration
+### Environment Configuration
 
 For security and convenience, set your connection string in environment variables:
 
@@ -88,7 +96,7 @@ supatool extract --all -o supabase/schemas
 - `DATABASE_URL` (fallback)
 - `SUPATOOL_MAX_CONCURRENT` (max concurrent table processing, default: 20, max: 50)
 
-### 4. Additional Commands
+### Additional Commands
 
 ```bash
 # Show help for all commands
@@ -98,16 +106,12 @@ supatool help
 supatool crud -i path/to/types -o path/to/output
 ```
 
-## Note: Supabase Client Requirement
+## Database Comments
 
-The generated CRUD code assumes that a Supabase client is defined in ../client.ts (relative to the export folder).
-Example:
+Supatool automatically extracts and includes PostgreSQL comments in all generated files. Comments enhance documentation and AI understanding of your schema.
 
-```ts
-// src/integrations/supabase/client.ts
-import { createClient } from '@supabase/supabase-js'
-export const supabase = createClient('YOUR_SUPABASE_URL', 'YOUR_SUPABASE_ANON_KEY')
-```
+- Table, view, function, and type comments are included in generated SQL and documentation.
+- AI-friendly index files (llms.txt) and Markdown index (index.md) include comments for better context.
 
 ## VSCode/Cursor Integration
 
@@ -271,99 +275,56 @@ supatool extract --all --schema public,auth,extensions -o supabase/schemas
 supatool extract --all -c "postgresql://..." -o supabase/schemas
 ```
 
-## New Features (v0.3.0)
+## Seed Command (v0.3.5+)
 
-- **🔍 Schema Extraction**: Extract and categorize all database objects (tables, views, RLS, functions, triggers)
-- **📋 Supabase Declarative Schema**: Fully compliant with [Supabase's declarative database schemas](https://supabase.com/docs/guides/local-development/declarative-database-schemas) workflow
-- **🤖 AI-Friendly Index**: Auto-generated index.md and llms.txt files for better AI understanding of schema structure  
-- **💬 Comment Support**: Automatically extracts and includes database comments in generated files
-- **📁 Organized Output**: Separate directories for different object types with flexible organization options
-- **🎯 Pattern Matching**: Extract specific tables/views using wildcard patterns
-- **👁️ View Support**: Enhanced CRUD generation with SELECT-only operations for database views
-- **⚛️ React Query Integration**: Generate modern React hooks for data fetching
-- **🔧 Flexible Workflows**: Support both database-first and model-first development approaches
+Export selected table data from your remote Supabase DB as AI-friendly seed JSON files.
 
-## Changelog
+### Usage
 
-### v0.3.4
-
-- **FIXED**: Corrected RLS policy to proper format
-- **FIXED**: Ensured semicolon (;) is properly appended to function definitions
-- **FIXED**: Removed trailing whitespace from RLS template files
-
-### v0.3.3
-
-- **ENHANCED**: Improved SQL comment placement (moved to end of each SQL statement)
-- **ENHANCED**: Unified comment format for tables, views, functions, and custom types
-- **FIXED**: Preserved view `security_invoker` settings
-
-### v0.3.2
-
-- **ENHANCED**: Adjust for extensions(vector, geometry etc.)
-- **FIXED**: USER-DEFINED column types are now rendered with full type definitions (e.g. `vector(1536)`, `geometry(Point,4326)`).
-- **ADDED**: `FOREIGN KEY` constraints are now included as `CONSTRAINT ... FOREIGN KEY ... REFERENCES ...` inside generated `CREATE TABLE` statements.
-
-### v0.3.0
-
-**NEW Features:**
-- **NEW**: `extract` command for database schema extraction
-- **NEW**: Full compliance with Supabase declarative database schemas workflow
-- **NEW**: AI-friendly index.md and llms.txt generation for better schema understanding
-- **NEW**: Database comment extraction and integration
-- **NEW**: Organized directory structure (tables/, views/, rls/, rpc/)
-- **NEW**: Pattern matching for selective extraction
-- **ENHANCED**: Support for all database object types (RLS, functions, triggers, cron jobs, custom types)
-- **ENHANCED**: Flexible output options with --no-separate compatibility
-
-**Enhanced Error Handling:**
-- Comprehensive try-catch blocks for all CRUD operations
-- Enhanced null/undefined checks with proper fallbacks
-- Detailed error messages with contextual information
-- Special handling for PGRST116 errors (record not found)
-- Parameter validation for required fields
-- Proper error logging and debugging support
-
-**Breaking Changes:**
-- **Function Parameter Format**: All CRUD functions now use destructuring assignment
-  - Before: `selectTableRowById(id: string)`
-  - After: `selectTableRowById({ id }: { id: string })`
-- **Type Safety**: Enhanced TypeScript type annotations for all functions
-
-### v0.2.0
-- Added `gen:` commands for code and schema generation
-- Enhanced `create` command  
-- Introduced model schema support (`schemas/supatool-data.schema.ts`)
-
-## Database Comments
-
-Supatool automatically extracts and includes PostgreSQL comments in all generated files. Comments enhance documentation and AI understanding of your schema.
-
-### Adding Comments to Your Database
-
-```sql
--- Table comments
-COMMENT ON TABLE users IS 'User account information and authentication data';
-
--- View comments
-COMMENT ON VIEW user_profiles IS 'Combined user data with profile information';
-
--- Function comments
-COMMENT ON FUNCTION update_timestamp() IS 'Automatically updates the updated_at column';
-
--- Custom type comments
-COMMENT ON TYPE user_status IS 'Enumeration of possible user account statuses';
+```
+supatool seed --tables tables.yaml --connection <CONNECTION_STRING>
 ```
 
-### Comment Integration
+- `tables.yaml` example:
+  ```yaml
+  tables:
+    - users
+    - public.orders
+  ```
+- Output: `supabase/seeds/<timestamp>_supatool/{table}_seed.json`
+- Each file contains a snapshot of the remote DB table at the time of export.
 
-Comments appear in:
-- **index.md**: Human-readable file listings with descriptions (tables/views only)
-- **llms.txt**: AI-friendly format (`type:name:path:comment`)
-- **Generated SQL**: As `COMMENT ON` statements for full schema recreation
-
-**Example output:**
-```markdown
-## Tables
-- [users](tables/users.sql) - User account information and authentication data
-- [posts](tables/posts.sql) - User-generated content and blog posts
+### Example output (users_seed.json)
+```json
+{
+  "table": "public.users",
+  "fetched_at": "2024-07-05T11:16:00Z",
+  "fetched_by": "supatool v0.3.5",
+  "note": "This data is a snapshot of the remote DB at the above time. For AI coding reference. You can update it by running the update command again.",
+  "rows": [
+    { "id": 1, "name": "Taro Yamada", "email": "taro@example.com" },
+    { "id": 2, "name": "Hanako Suzuki", "email": "hanako@example.com" }
+  ]
+}
 ```
+
+> **Warning:** Do not include sensitive or personal data in seed files. Handle all exported data with care.
+
+### llms.txt (AI seed data index)
+
+After exporting, a file named `llms.txt` is automatically generated (and overwritten) in the `supabase/seeds/` directory. This file lists all seed JSON files in the latest timestamped folder, with table name, fetch time, and row count for AI reference.
+
+- Note: `llms.txt` is not generated inside each timestamped subfolder, only in `supabase/seeds/`.
+
+#### Example llms.txt
+```
+# AI seed data index (generated by supatool)
+# fetched_at: 2024-07-05T11:16:00Z
+# folder: 20240705_1116_supatool
+public.users: users_seed.json (2 rows) # User account table
+public.orders: orders_seed.json (5 rows)
+```
+
+## More Information
+
+For full version history and detailed changes, see [CHANGELOG.md](./CHANGELOG.md).

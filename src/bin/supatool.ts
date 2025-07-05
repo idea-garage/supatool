@@ -14,6 +14,7 @@ import { generateSqlFromModel } from '../generator/sqlGenerator';
 import { generateRlsSqlFromModel } from '../generator/rlsGenerator';
 import { syncAllTables, resolveConfig, createConfigTemplate } from '../sync';
 import { extractDefinitions } from '../sync/definitionExtractor';
+import { generateSeedsFromRemote } from '../sync/seedGenerator';
 
 import fs from 'fs';
 import path from 'path';
@@ -206,6 +207,75 @@ program
   .description('Show help')
   .action(() => {
     console.log(helpText);
+  });
+
+// sync コマンド
+program
+  .command('sync')
+  .description('ローカルスキーマとリモートスキーマを同期')
+  .option('-c, --connection <string>', 'Supabase connection string')
+  .option('-s, --schema-dir <path>', 'ローカルスキーマディレクトリ', './supabase/schemas')
+  .option('-t, --tables <pattern>', 'テーブルパターン（ワイルドカード対応）', '*')
+  .option('-f, --force', '強制上書き（確認なし）')
+  .option('--config <path>', '設定ファイルパス')
+  .action(async (options) => {
+    const config = resolveConfig({
+      connectionString: options.connection
+    }, options.config);
+    
+    if (!config.connectionString) {
+      console.error('Connection string is required. Set it using one of:');
+      console.error('1. --connection option');
+      console.error('2. SUPABASE_CONNECTION_STRING environment variable');
+      console.error('3. DATABASE_URL environment variable');
+      console.error('4. supatool.config.json configuration file');
+      process.exit(1);
+    }
+    
+    try {
+      await syncAllTables({
+        connectionString: config.connectionString,
+        schemaDir: options.schemaDir,
+        tablePattern: options.tables,
+        force: options.force
+      });
+    } catch (error) {
+      console.error('⚠️ Sync error:', error);
+      process.exit(1);
+    }
+  });
+
+// seed コマンド
+program
+  .command('seed')
+  .description('指定テーブルのデータをリモートDBから取得し、AI用シードJSONを生成')
+  .option('-c, --connection <string>', 'Supabase接続文字列')
+  .option('-t, --tables <path>', '取得テーブル一覧YAML', 'tables.yaml')
+  .option('-o, --out <dir>', '出力ディレクトリ', 'supabase/seeds')
+  .option('--config <path>', '設定ファイルパス')
+  .action(async (options) => {
+    // 接続情報の解決
+    const config = resolveConfig({
+      connectionString: options.connection
+    }, options.config);
+    if (!config.connectionString) {
+      console.error('Connection string is required. Set it using one of:');
+      console.error('1. --connection option');
+      console.error('2. SUPABASE_CONNECTION_STRING environment variable');
+      console.error('3. DATABASE_URL environment variable');
+      console.error('4. supatool.config.json configuration file');
+      process.exit(1);
+    }
+    try {
+      await generateSeedsFromRemote({
+        connectionString: config.connectionString,
+        tablesYamlPath: options.tables,
+        outputDir: options.out
+      });
+    } catch (error) {
+      console.error('⚠️ Seed取得エラー:', error);
+      process.exit(1);
+    }
   });
 
 // If no subcommand is specified, show helpText only (do not call main)

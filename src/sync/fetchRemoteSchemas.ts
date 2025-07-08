@@ -1,6 +1,7 @@
 import { Client } from 'pg';
 import * as dns from 'dns';
 import { promisify } from 'util';
+import { generateCreateTableDDL } from './definitionExtractor';
 
 const dnsLookup = promisify(dns.lookup);
 
@@ -155,184 +156,30 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
     // 各テーブルのスキーマ情報を取得
     for (const row of tablesResult.rows) {
       const tableName = row.tablename;
-
-      // テーブルの最終更新時刻を取得（複数の方法を試行）
-      let timestamp = Math.floor(Date.now() / 1000); // デフォルト値
-      
-                    // pg_stat_user_tablesから取得
-       try {
-         const tableStatsResult = await client.query(`
-           SELECT 
-             EXTRACT(EPOCH FROM GREATEST(
-               COALESCE(last_vacuum, '1970-01-01'::timestamp),
-               COALESCE(last_autovacuum, '1970-01-01'::timestamp),
-               COALESCE(last_analyze, '1970-01-01'::timestamp),
-               COALESCE(last_autoanalyze, '1970-01-01'::timestamp)
-             ))::bigint as last_updated
-           FROM pg_stat_user_tables 
-           WHERE relname = $1 AND schemaname = 'public'
-         `, [tableName]);
-
+      // テーブルの最終更新時刻を取得（省略: 既存ロジック流用）
+      let timestamp = Math.floor(Date.now() / 1000);
+      try {
+        const tableStatsResult = await client.query(`
+          SELECT 
+            EXTRACT(EPOCH FROM GREATEST(
+              COALESCE(last_vacuum, '1970-01-01'::timestamp),
+              COALESCE(last_autovacuum, '1970-01-01'::timestamp),
+              COALESCE(last_analyze, '1970-01-01'::timestamp),
+              COALESCE(last_autoanalyze, '1970-01-01'::timestamp)
+            ))::bigint as last_updated
+          FROM pg_stat_user_tables 
+          WHERE relname = $1 AND schemaname = 'public'
+        `, [tableName]);
         if (tableStatsResult.rows.length > 0 && tableStatsResult.rows[0].last_updated > 0) {
           timestamp = tableStatsResult.rows[0].last_updated;
         } else {
-          // デフォルトタイムスタンプ（十分に古い固定値）
           timestamp = Math.floor(new Date('2020-01-01').getTime() / 1000);
         }
-       } catch (statsError) {
-          // デフォルトタイムスタンプ（十分に古い固定値）
-          timestamp = Math.floor(new Date('2020-01-01').getTime() / 1000);
-         }
-
-      // カラム情報を取得
-      const columnsResult = await client.query(`
-        SELECT 
-          column_name,
-          data_type,
-          character_maximum_length,
-          is_nullable,
-          column_default
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-          AND table_name = $1
-        ORDER BY ordinal_position
-      `, [tableName]);
-
-      // 主キー情報を取得
-      const primaryKeyResult = await client.query(`
-        SELECT column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu 
-          ON tc.constraint_name = kcu.constraint_name
-        WHERE tc.table_schema = 'public'
-          AND tc.table_name = $1
-          AND tc.constraint_type = 'PRIMARY KEY'
-        ORDER BY kcu.ordinal_position
-      `, [tableName]);
-
-      // CREATE TABLE文を生成
-      let ddl = `CREATE TABLE IF NOT EXISTS ${tableName} (\n`;
-      
-      const columnDefs: string[] = [];
-      for (const col of columnsResult.rows) {
-        let colDef = `  ${col.column_name} ${col.data_type.toUpperCase()}`;
-        
-        // 長さ指定
-        if (col.character_maximum_length) {
-          colDef += `(${col.character_maximum_length})`;
-        }
-        
-        // NOT NULL制約
-        if (col.is_nullable === 'NO') {
-          colDef += ' NOT NULL';
-        }
-        
-        // デフォルト値
-        if (col.column_default) {
-          colDef += ` DEFAULT ${col.column_default}`;
-        }
-        
-        columnDefs.push(colDef);
+      } catch {
+        timestamp = Math.floor(new Date('2020-01-01').getTime() / 1000);
       }
-      
-      ddl += columnDefs.join(',\n');
-      
-      // 主キー制約
-      if (primaryKeyResult.rows.length > 0) {
-        const pkColumns = primaryKeyResult.rows.map(row => row.column_name);
-        ddl += `,\n  PRIMARY KEY (${pkColumns.join(', ')})`;
-      }
-
-      // UNIQUE制約を取得してCREATE TABLE内に含める
-      const uniqueConstraintResult = await client.query(`
-        SELECT 
-          tc.constraint_name,
-          string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) as columns
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu 
-          ON tc.constraint_name = kcu.constraint_name
-        WHERE tc.table_schema = 'public'
-          AND tc.table_name = $1
-          AND tc.constraint_type = 'UNIQUE'
-        GROUP BY tc.constraint_name
-        ORDER BY tc.constraint_name
-      `, [tableName]);
-
-      // UNIQUE制約をCREATE TABLE内に追加
-      for (const unique of uniqueConstraintResult.rows) {
-        ddl += `,\n  CONSTRAINT ${unique.constraint_name} UNIQUE (${unique.columns})`;
-      }
-
-      // CHECK制約は一時的に無効化（NOT NULL制約と重複するため）
-      // const checkConstraintResult = await client.query(`...`);
-
-      // CHECK制約をCREATE TABLE内に追加は一時的に無効化
-      // for (const check of checkConstraintResult.rows) {
-      //   ddl += `,\n  CONSTRAINT ${check.constraint_name} CHECK ${check.check_clause}`;
-      // }
-      
-      ddl += '\n);';
-
-      // 外部キー制約のみを別途生成
-      const foreignKeyResult = await client.query(`
-        SELECT 
-          tc.constraint_name,
-          kcu.column_name,
-          ccu.table_name AS foreign_table_name,
-          ccu.column_name AS foreign_column_name,
-          rc.delete_rule,
-          rc.update_rule
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu 
-          ON tc.constraint_name = kcu.constraint_name
-        JOIN information_schema.constraint_column_usage ccu 
-          ON ccu.constraint_name = tc.constraint_name
-        JOIN information_schema.referential_constraints rc 
-          ON tc.constraint_name = rc.constraint_name
-        WHERE tc.table_schema = 'public'
-          AND tc.table_name = $1
-          AND tc.constraint_type = 'FOREIGN KEY'
-        ORDER BY tc.constraint_name
-      `, [tableName]);
-
-      // 外部キー制約のみをALTER TABLE文として追加
-      for (const fk of foreignKeyResult.rows) {
-        ddl += `\n\nALTER TABLE ${tableName} ADD CONSTRAINT ${fk.constraint_name}`;
-        ddl += ` FOREIGN KEY (${fk.column_name})`;
-        ddl += ` REFERENCES ${fk.foreign_table_name} (${fk.foreign_column_name})`;
-        
-        if (fk.delete_rule && fk.delete_rule !== 'NO ACTION') {
-          ddl += ` ON DELETE ${fk.delete_rule}`;
-        }
-        if (fk.update_rule && fk.update_rule !== 'NO ACTION') {
-          ddl += ` ON UPDATE ${fk.update_rule}`;
-        }
-        ddl += ';';
-      }
-
-      // インデックス情報を取得
-      const indexResult = await client.query(`
-        SELECT 
-          indexname,
-          indexdef
-        FROM pg_indexes 
-        WHERE schemaname = 'public' 
-          AND tablename = $1
-          AND indexname NOT LIKE '%_pkey'
-          AND indexname NOT IN (
-            SELECT tc.constraint_name 
-            FROM information_schema.table_constraints tc
-            WHERE tc.table_name = $1 AND tc.constraint_type = 'UNIQUE'
-          )
-        ORDER BY indexname
-      `, [tableName]);
-
-      // インデックスを追加
-      for (const idx of indexResult.rows) {
-        ddl += `\n\n${idx.indexdef};`;
-      }
-
-      // DDLを元の形式で保存
+      // DDL生成をdefinitionExtractorの関数で統一
+      const ddl = await generateCreateTableDDL(client, tableName, 'public');
       schemas[tableName] = {
         ddl,
         timestamp

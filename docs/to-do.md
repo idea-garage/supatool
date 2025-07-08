@@ -1,3 +1,14 @@
+# v0.3.7
+- TableのCheck制約へ対応
+
+# v0.3.6
+- [x] Support for multiple schemas in type definitions
+- [x] Generate CRUD files in separate folders by schema (e.g., `crud-autogen/public/`, `crud-autogen/admin/`)
+- [x] Use `.schema(schema).from(table)` format for Supabase queries instead of `.from(schema.table)`
+- [x] Dynamically adjust import paths: `../../client` when schema folders exist, `../client` when not
+- [x] Fix template literal issues in CRUD generation by using array-based string construction
+- [x] Add comments to generated CRUD functions
+
 # v0.3.4
 - [x] RLSポリシーの`TO {public}`を正しく`TO public`に修正
 - [x] 関数定義の末尾にセミコロン（;）を確実に付与

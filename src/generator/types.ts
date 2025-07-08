@@ -3,6 +3,10 @@ export type TableDef = {
   relations?: Record<string, any>;
   skipCreate?: boolean;
   description?: string;
+  checkConstraints?: Array<{
+    name?: string;
+    expression: string;
+  }>;
 };
 
 export type ModelDef = {

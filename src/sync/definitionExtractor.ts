@@ -983,6 +983,23 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
   for (const fk of foreignKeyResult.rows) {
     ddl += `,\n  CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.columns}) REFERENCES ${fk.foreign_table_schema}.${fk.foreign_table_name} (${fk.foreign_columns})`;
   }
+
+  // CHECK制約をCREATE TABLE内に追加（必ず最後）
+  const checkConstraintResult = await client.query(`
+    SELECT 
+      con.conname as constraint_name,
+      pg_get_constraintdef(con.oid) as check_clause
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE lower(rel.relname) = lower($1)
+      AND nsp.nspname = $2
+      AND con.contype = 'c'
+    ORDER BY con.conname
+  `, [tableName, schemaName]);
+  for (const check of checkConstraintResult.rows) {
+    ddl += `,\n  CONSTRAINT ${check.constraint_name} ${check.check_clause}`;
+  }
   
   ddl += '\n);\n\n';
 
@@ -1517,3 +1534,5 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     }
   }
 }
+
+export { generateCreateTableDDL };

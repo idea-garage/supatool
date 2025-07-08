@@ -50,3 +50,10 @@ All notable changes to this project will be documented in this file.
 - Change: README llms.txt example updated to match latest format
 - Fix: Output folder for seeds now uses yyyymmdd_hhmm_supatool format
 - Other minor improvements and bug fixes 
+
+## v0.3.7
+- Unified DDL and sync command constraint output logic
+- CHECK constraints are now always output at the end of the DDL
+- Constraint output order is now unified as: UNIQUE → FOREIGN KEY → CHECK
+- DDL generation in fetchRemoteSchemas.ts is now unified, so all commands output the same DDL
+- Removed redundant/duplicate logic for better maintainability and readability 

@@ -1,20 +1,19 @@
-// SQL自動生成（テーブル・リレーション最小雛形）
-// 日本語コメント
+// SQL auto-generation (table・relation minimal template)
 import path from 'path';
 import fs from 'fs';
 import type { TableDef, ModelDef } from './types';
 
 /**
- * モデルからテーブル定義・リレーションSQLを生成
- * @param model モデルオブジェクト
- * @param outPath 出力先パス
+ * Generate table definitions and relation SQL from model
+ * @param model Model object
+ * @param outPath Output path
  */
 export function generateSqlFromModel(model: any, outPath: string) {
   const dir = path.dirname(outPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  // dataSchema/models両対応: テーブル一覧取得
+  // dataSchema/models: get table list
   let tables: any[] = [];
   if (Array.isArray(model.dataSchema)) {
     tables = model.dataSchema.map((t: any) => ({ tableName: t.tableName || t.raw, ...t }));
@@ -27,16 +26,16 @@ export function generateSqlFromModel(model: any, outPath: string) {
       }
     }
   }
-  let sql = '-- 自動生成: テーブル・リレーションDDL\n\n';
+  let sql = '-- Auto-generated: table・relation DDL\n\n';
   for (const tableObj of tables) {
     const t = tableObj;
     const tableName = tableObj.tableName;
     if (t.skipCreate) {
-      // auth.usersなど作成不要テーブルはコメントで明示
-      sql += `-- [skip] ${tableName}（作成不要: Supabase組み込み等）\n`;
+      // Skip-create tables (e.g. auth.users) noted in comment
+      sql += `-- [skip] ${tableName} (skip: Supabase built-in etc.)\n`;
       continue;
     }
-    // ユーザーIDカラムの自動命名調整
+    // Auto-naming for user_id columns
     const userIdFields = Object.entries(t.fields || {}).filter(([colName, col]) => {
       const c = col as any;
       return (colName === 'user_id' || (c.ref && c.ref.endsWith('user_profiles.id')));
@@ -48,12 +47,12 @@ export function generateSqlFromModel(model: any, outPath: string) {
     for (const [colName, col] of Object.entries(t.fields || {})) {
       const c = col as any;
       let actualColName = colName;
-      // ユーザーIDカラム命名ルール適用
+      // Apply user_id column naming rule
       if ((colName !== 'user_id') && c.ref && c.ref.endsWith('user_profiles.id')) {
         if (userIdCount === 1) {
           actualColName = 'user_id';
         } else {
-          // 参照先テーブル名_user_id
+          // ref_table_user_id
           const refTable = c.ref.split('.')[0];
           actualColName = `${refTable}_user_id`;
         }
@@ -63,14 +62,14 @@ export function generateSqlFromModel(model: any, outPath: string) {
       if (c.default) def += ` DEFAULT ${c.default}`;
       colDefs.push(def);
     }
-    // 主キー制約（constraint名付き）
+    // Primary key constraint (with constraint name)
     const pkCols = Object.entries(t.fields || {})
       .filter(([_, col]) => (col as any).primary)
       .map(([colName, _]) => colName);
     if (pkCols.length > 0) {
       tableConstraints.push(`  CONSTRAINT ${tableName}_pkey PRIMARY KEY (${pkCols.join(', ')})`);
     }
-    // ユニーク制約（constraint名付き）
+    // Unique constraint (with constraint name)
     if (Array.isArray(t.uniques)) {
       for (const unique of t.uniques) {
         if (Array.isArray(unique.columns) && unique.name) {
@@ -78,7 +77,7 @@ export function generateSqlFromModel(model: any, outPath: string) {
         }
       }
     }
-    // 外部キー制約（constraint名付き）
+    // Foreign key constraint (with constraint name)
     if (Array.isArray(t.foreignKeys)) {
       for (const fk of t.foreignKeys) {
         if (fk.name && fk.columns && fk.refTable && fk.refColumns) {
@@ -89,7 +88,7 @@ export function generateSqlFromModel(model: any, outPath: string) {
         }
       }
     }
-    // チェック制約（constraint名付き）
+    // Check constraint (with constraint name)
     if (Array.isArray(t.checkConstraints)) {
       for (const check of t.checkConstraints) {
         if (check.name) {
@@ -99,7 +98,7 @@ export function generateSqlFromModel(model: any, outPath: string) {
         }
       }
     }
-    // 列定義 + テーブルレベル制約を結合
+    // Join column defs and table-level constraints
     const defs = [...colDefs, ...tableConstraints];
     sql += defs.join(',\n') + '\n);\n\n';
     sql += '\n';
@@ -109,11 +108,11 @@ export function generateSqlFromModel(model: any, outPath: string) {
 
 function toSqlType(type: string | undefined, colName: string): string {
   if (!type) return 'text';
-  // 時刻列は必ずtimestamptz
+  // Timestamp columns always timestamptz
   if (type === 'timestamp' || type === 'timestamptz' || colName.endsWith('_at')) return 'timestamptz';
-  // vector型サポート
+  // vector type support
   if (/^vector(\(\d+\))?$/i.test(type)) return type;
-  // extensions.vector → vector へ変換
+  // extensions.vector -> vector
   const extVectorMatch = type.match(/^extensions\.vector(\(\d+\))?$/i);
   if (extVectorMatch) {
     return `vector${extVectorMatch[1] || ''}`;
@@ -124,6 +123,6 @@ function toSqlType(type: string | undefined, colName: string): string {
     case 'int':
     case 'integer': return 'integer';
     case 'boolean': return 'boolean';
-    default: return type; // 指定が未知の場合はそのまま返す
+    default: return type; // unknown type: pass through
   }
 } 

@@ -1,13 +1,13 @@
-// 自動生成: users用CRUD関数
+// Auto-generated: CRUD for users
 
 import { supabase } from '../client';
 import type { users } from '../types';
 
-// フィルター型定義
+// Filter type definition
 type FilterValue = string | number | boolean | null;
 type Filters = Record<string, FilterValue | FilterValue[]>;
 
-/** 全件取得 */
+/** Select all */
 export async function selectUsersRows(): Promise<users[]> {
   try {
     const { data, error } = await supabase.from('users').select('*');
@@ -25,7 +25,7 @@ export async function selectUsersRows(): Promise<users[]> {
   }
 }
 
-/** IDで1件取得 */
+/** Select by ID */
 export async function selectUsersRowById({ id }: { id: string }): Promise<users | null> {
   if (!id) {
     throw new Error('ID is required');
@@ -33,7 +33,7 @@ export async function selectUsersRowById({ id }: { id: string }): Promise<users 
   try {
     const { data, error } = await supabase.from('users').select('*').eq('id', id).single();
     if (error) {
-      // レコードが見つからない場合（PGRST116）は null を返す
+      // Return null when record not found (PGRST116)
       if (error.code === 'PGRST116') {
         return null;
       }
@@ -47,14 +47,14 @@ export async function selectUsersRowById({ id }: { id: string }): Promise<users 
   }
 }
 
-/** フィルターで複数件取得 */
+/** Select multiple by filters */
 export async function selectUsersRowsWithFilters({ filters }: { filters: Filters }): Promise<users[]> {
-  // filtersのガード
+  // Guard for filters
   if (!filters || typeof filters !== 'object') return [];
   try {
     let query = supabase.from('users').select('*');
     
-    // フィルターを適用
+    // Apply filters
     for (const [key, value] of Object.entries(filters)) {
       if (Array.isArray(value)) {
         query = query.in(key, value);
@@ -75,7 +75,7 @@ export async function selectUsersRowsWithFilters({ filters }: { filters: Filters
   }
 }
 
-/** 新規作成 */
+/** Insert */
 export async function insertUsersRow({ data }: { data: Omit<users, 'id' | 'created_at' | 'updated_at'> }): Promise<users> {
   if (!data) {
     throw new Error('Data is required for creation');
@@ -100,7 +100,7 @@ export async function insertUsersRow({ data }: { data: Omit<users, 'id' | 'creat
   }
 }
 
-/** 更新 */
+/** Update */
 export async function updateUsersRow({ id, data }: { id: string; data: Partial<Omit<users, 'id' | 'created_at'>> }): Promise<users> {
   if (!id) {
     throw new Error('ID is required for update');
@@ -132,7 +132,7 @@ export async function updateUsersRow({ id, data }: { id: string; data: Partial<O
   }
 }
 
-/** 削除 */
+/** Delete */
 export async function deleteUsersRow({ id }: { id: string }): Promise<boolean> {
   if (!id) {
     throw new Error('ID is required for deletion');

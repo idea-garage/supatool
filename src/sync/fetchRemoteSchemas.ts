@@ -11,75 +11,75 @@ export interface RemoteSchema {
 }
 
 /**
- * DDL文字列を正規化（空白・改行・タブを統一）
+ * Normalize DDL string (unify whitespace, newlines, tabs)
  */
 function normalizeDDL(ddl: string): string {
   return ddl
-    .replace(/\s+/g, ' ')     // 連続する空白文字を1つのスペースに
-    .replace(/;\s+/g, ';\n')  // セミコロン後に改行
-    .trim();                  // 前後の空白を削除
+    .replace(/\s+/g, ' ')     // collapse consecutive whitespace to single space
+    .replace(/;\s+/g, ';\n')  // newline after semicolon
+    .trim();                  // trim leading/trailing
 }
 
 /**
- * リモートSupabaseからスキーマを取得
+ * Fetch schema from remote Supabase
  */
-export async function fetchRemoteSchemas(connectionString: string): Promise<Record<string, RemoteSchema>> {
+export async function fetchRemoteSchemas(connectionString: string, targetTableNames?: string[]): Promise<Record<string, RemoteSchema>> {
   const schemas: Record<string, RemoteSchema> = {};
   
-  // console.log('データベースに接続中...');
+  // console.log('Connecting to database...');
   
   try {
-    // 接続文字列の基本チェック
+    // Basic connection string check
     if (!connectionString || !connectionString.startsWith('postgresql://')) {
-      throw new Error('無効な接続文字列です。postgresql://で始まる形式で指定してください。');
+      throw new Error('Invalid connection string. Please specify a valid postgresql:// format.');
     }
 
-    // URL解析して接続先を表示
+    // Parse URL and display connection info
     const url = new URL(connectionString);
-    console.log(`接続先: ${url.hostname}:${url.port}`);
-    console.log(`ユーザー: ${url.username}`);
+    console.log(`Target: ${url.hostname}:${url.port}`);
+    console.log(`User: ${url.username}`);
 
-    // パスワードに特殊文字が含まれている場合の対処
+    // Handle special characters in password
     const decodedPassword = decodeURIComponent(url.password || '');
     
-    // 接続文字列を再構築（パスワードを適切にエンコード）
+    // Rebuild connection string with proper password encoding
     const encodedPassword = encodeURIComponent(decodedPassword);
     
-    // Session poolerのモードを明示的に指定
+    // Explicit session pooler mode
     let reconstructedConnectionString = `postgresql://${url.username}:${encodedPassword}@${url.hostname}:${url.port}${url.pathname}`;
     
-    // Session poolingモードのパラメータを追加
+    // Add session pooling params
     const searchParams = new URLSearchParams(url.search);
     searchParams.set('sslmode', 'require');
     searchParams.set('application_name', 'supatool');
     
     reconstructedConnectionString += `?${searchParams.toString()}`;
 
-    // IPv4を優先に変更
+    // Prefer IPv4
     dns.setDefaultResultOrder('ipv4first');
 
-    // DNS解決テスト
+    // DNS resolution test
     try {
       const addresses = await dns.promises.lookup(url.hostname, { all: true });
     } catch (dnsError) {
-      console.error('❌ DNS解決に失敗しました');
+      console.error('❌ DNS resolution failed');
       throw dnsError;
     }
 
-    // Session pooler用の設定
+    // Session pooler config
     const clientConfig = {
       connectionString: reconstructedConnectionString,
       ssl: {
         rejectUnauthorized: false
       },
-      // Session pooler用の追加設定
+      // Session pooler extra options
       statement_timeout: 30000,
       query_timeout: 30000,
       connectionTimeoutMillis: 10000,
       idleTimeoutMillis: 10000
     };
 
-    console.log('Session pooler経由で接続中...');
+    console.log('Connecting via session pooler...');
     let client;
     
     try {
@@ -92,9 +92,9 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
         sslError.message.includes('certificate') ||
         sslError.message.includes('SELF_SIGNED_CERT')
       )) {
-        console.log('SSL接続不可のため、SSL無効化で再試行中...');
+        console.log('SSL connection failed, retrying with SSL disabled...');
         
-        // SSL無効化バージョンを試行
+        // Retry with SSL disabled
         const noSslConnectionString = reconstructedConnectionString.replace('sslmode=require', 'sslmode=disable');
         const noSslConfig = {
           ...clientConfig,
@@ -105,12 +105,12 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
         try {
           client = new Client(noSslConfig);
           await client.connect();
-          console.log('SSL無効化での接続に成功');
+          console.log('Connection successful with SSL disabled');
         } catch (noSslError) {
           if (noSslError instanceof Error && (noSslError.message.includes('SASL') || noSslError.message.includes('SCRAM'))) {
-            console.log('Session poolerでSASLエラー継続。Direct connectionで再試行中...');
+            console.log('SASL error continues with session pooler. Retrying with direct connection...');
             
-            // Direct connection (ポート5432) で再試行
+            // Retry with direct connection (port 5432)
             const directConnectionString = noSslConnectionString.replace('pooler.supabase.com:5432', 'supabase.co:5432');
             const directConfig = {
               ...noSslConfig,
@@ -119,7 +119,7 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
             
             client = new Client(directConfig);
             await client.connect();
-            console.log('Direct connectionでの接続に成功');
+            console.log('Direct connection successful');
           } else {
             throw noSslError;
           }
@@ -129,34 +129,48 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
       }
     }
 
-    // 接続テストクエリ
+    // Connection test query
     const testResult = await client.query('SELECT version()');
 
-    // テーブル一覧を取得
-    const tablesResult = await client.query(`
-      SELECT tablename 
-      FROM pg_tables 
-      WHERE schemaname = 'public'
-      ORDER BY tablename
-    `);
+    // Fetch table list
+    let tablesResult;
+    if (targetTableNames && targetTableNames.length > 0) {
+      // When targeting specific tables only
+      const placeholders = targetTableNames.map((_, index) => `$${index + 1}`).join(',');
+      tablesResult = await client.query(`
+        SELECT tablename 
+        FROM pg_tables 
+        WHERE schemaname = 'public' 
+        AND tablename IN (${placeholders})
+        ORDER BY tablename
+      `, targetTableNames);
+      console.log(`Remote tables (filtered): ${tablesResult.rows.length}/${targetTableNames.length}`);
+    } else {
+      // All tables
+      tablesResult = await client.query(`
+        SELECT tablename 
+        FROM pg_tables 
+        WHERE schemaname = 'public'
+        ORDER BY tablename
+      `);
+      console.log(`Remote tables: ${tablesResult.rows.length}`);
+    }
 
-    console.log(`リモートテーブル：${tablesResult.rows.length}`);
-
-    // ローディングアニメーション用
+    // For loading animation
     const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let spinnerIndex = 0;
     
     const startTime = Date.now();
     const spinnerInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      process.stdout.write(`\r${spinner[spinnerIndex]} スキーマ取得中... ${elapsed}s`);
+      process.stdout.write(`\r${spinner[spinnerIndex]} Fetching schemas... ${elapsed}s`);
       spinnerIndex = (spinnerIndex + 1) % spinner.length;
     }, 100);
 
-    // 各テーブルのスキーマ情報を取得
+    // Fetch schema info for each table
     for (const row of tablesResult.rows) {
       const tableName = row.tablename;
-      // テーブルの最終更新時刻を取得（省略: 既存ロジック流用）
+      // Get table last updated time (reuse existing logic)
       let timestamp = Math.floor(Date.now() / 1000);
       try {
         const tableStatsResult = await client.query(`
@@ -178,7 +192,7 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
       } catch {
         timestamp = Math.floor(new Date('2020-01-01').getTime() / 1000);
       }
-      // DDL生成をdefinitionExtractorの関数で統一
+      // DDL generation unified with definitionExtractor
       const ddl = await generateCreateTableDDL(client, tableName, 'public');
       schemas[tableName] = {
         ddl,
@@ -186,7 +200,7 @@ export async function fetchRemoteSchemas(connectionString: string): Promise<Reco
       };
     }
 
-    // ローディングアニメーション停止
+    // Stop loading animation
     clearInterval(spinnerInterval);
     const totalTime = Math.floor((Date.now() - startTime) / 1000);
     process.stdout.write(`\rSchema fetch completed (${totalTime}s)                    \n`);

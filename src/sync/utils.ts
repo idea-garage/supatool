@@ -1,8 +1,22 @@
 // readline import removed - using raw mode instead
 
-// ワイルドカードマッチング関数
+// Wildcard matching function
 export function wildcardMatch(str: string, pattern: string): boolean {
-  return pattern === '*' || str.includes(pattern);
+  if (pattern === '*') {
+    return true;
+  }
+  
+  // Exact match if pattern contains no wildcards
+  if (!pattern.includes('*') && !pattern.includes('?')) {
+    return str === pattern;
+  }
+  
+  // Simple wildcard pattern matching
+  const regexPattern = pattern
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(str);
 }
 
 export interface ConfirmationOptions {
@@ -11,7 +25,7 @@ export interface ConfirmationOptions {
 }
 
 /**
- * ユーザーに確認を求める（1文字入力で即座に判定）
+ * Ask user for confirmation (immediate single character input)
  */
 export function askUserConfirmation(
   message: string, 
@@ -21,13 +35,13 @@ export function askUserConfirmation(
     const promptMessage = options?.message || '(y/N): ';
     process.stdout.write(`${message} ${promptMessage}`);
 
-    // rawモードを有効にして1文字入力を受け取る
+    // Enable raw mode to receive single character input
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
 
     const onData = (key: string) => {
-      // クリーンアップ
+      // Cleanup
       process.stdin.setRawMode(false);
       process.stdin.pause();
       process.stdin.removeListener('data', onData);
@@ -41,7 +55,7 @@ export function askUserConfirmation(
         console.log('a');
         resolve('all');
       } else if (lowerKey === 'n' || key === '\r' || key === '\n' || key === '\u0003') {
-        // n、Enter、または Ctrl+C
+        // n, Enter, or Ctrl+C
         if (key === '\u0003') {
           console.log('\nOperation cancelled');
           process.exit(0);
@@ -49,7 +63,7 @@ export function askUserConfirmation(
         console.log(lowerKey === 'n' ? 'n' : 'N');
         resolve(false);
       } else {
-        // 無効なキー：デフォルトでfalse
+        // Invalid key: default to false
         console.log(`${key} (invalid input, treating as N)`);
         resolve(false);
       }

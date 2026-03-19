@@ -5,7 +5,7 @@ roles:
 
 models:
   m_roles:
-    description: ロールマスタ
+    description: Role master
     fields:
       id:
         type: uuid
@@ -14,7 +14,7 @@ models:
         type: text
         notNull: true
   user_roles:
-    description: ユーザーごとのロール割当
+    description: Role assignment per user
     fields:
       id:
         type: uuid
@@ -26,17 +26,17 @@ models:
         type: uuid
         notNull: true
   user_profiles:
-    description: ユーザープロファイル情報
+    description: User profile
     fields:
       id:
         type: uuid
         primary: true
         default: uuid_generate_v4()
-        label: ユーザーID
+        label: User ID
       name:
         type: text
         notNull: true
-        label: 氏名
+        label: Name
       created_at:
         type: timestamp
         default: now()
@@ -46,22 +46,22 @@ models:
         target: participants
         foreignKey: user_profile_id
   participants:
-    description: イベント参加者情報
+    description: Event participants
     fields:
       id:
         type: uuid
         primary: true
         default: uuid_generate_v4()
-        label: 参加者ID
+        label: Participant ID
       user_id:
         type: uuid
         ref: user_profiles.id
         notNull: true
-        label: ユーザーID
+        label: User ID
       status:
         type: text
         enum: [pending, confirmed, cancelled]
-        label: ステータス
+        label: Status
     relations:
       user_profile:
         type: belongsTo
@@ -71,7 +71,7 @@ models:
 security:
   functions:
     get_user_role:
-      description: ユーザーのロールを取得
+      description: Get user role
       use_template: true
       template_type: simple
   policies:

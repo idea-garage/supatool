@@ -9,14 +9,15 @@ Usage:
 Commands:
   extract            Extract database objects from Supabase
   gen:types          Generate TypeScript types from model YAML
-  gen:crud           Generate CRUD TypeScript code from model YAML
+  gen:crud           Generate CRUD TypeScript code from model YAML [deprecated - prefer writing code with LLM]
   gen:docs           Generate Markdown documentation from model YAML
   gen:sql            Generate SQL (tables, relations, RLS/security) from model YAML
   gen:rls            Generate RLS/security SQL from model YAML
   gen:all            Generate all outputs from model YAML
   create             Generate a template model YAML
-  crud               Generate CRUD code from Supabase type definitions
-  sync               Sync local and remote schemas
+  crud               Generate CRUD code from Supabase type definitions [deprecated - prefer writing code with LLM]
+  deploy             Deploy local schema changes to remote (recommended)
+  sync               Sync local and remote schemas [deprecated - use deploy]
   seed               Export selected table data as AI-friendly seed JSON
   config:init        Generate configuration template
   help               Show help
@@ -28,6 +29,19 @@ Common Options:
   --schema <schemas>           Target schemas (comma-separated)
   --config <path>              Configuration file path
   -f, --force                  Force overwrite
+
+seed command:
+  supatool seed -c <connection> [-t tables.yaml] [-o supabase/seeds]
+
+  tables.yaml format (schema-grouped):
+    public:
+      - users
+      - posts
+    admin:
+      - platforms
+
+  Output: supabase/seeds/<timestamp>/<schema>/<table>_seed.json
+          supabase/seeds/llms.txt  (index for AI)
 
 For details, see the documentation.
 `;

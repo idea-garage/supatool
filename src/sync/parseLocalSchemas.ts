@@ -3,24 +3,24 @@ import * as path from 'path';
 
 export interface LocalSchema {
   ddl: string;
-  normalizedDdl: string; // 比較用の正規化されたDDL
+  normalizedDdl: string; // normalized DDL for comparison
   timestamp: number;
-  fileTimestamp: number; // ファイル自体の更新日時
+  fileTimestamp: number; // file mtime
   filePath: string;
 }
 
 /**
- * DDL文字列を正規化（空白・改行・タブを統一）
+ * Normalize DDL string (unify whitespace, newlines, tabs)
  */
 function normalizeDDL(ddl: string): string {
   return ddl
-    .replace(/\s+/g, ' ')     // 連続する空白文字を1つのスペースに
-    .replace(/;\s+/g, ';\n')  // セミコロン後に改行
-    .trim();                  // 前後の空白を削除
+    .replace(/\s+/g, ' ')     // collapse consecutive whitespace to single space
+    .replace(/;\s+/g, ';\n')  // newline after semicolon
+    .trim();                  // trim leading/trailing
 }
 
 /**
- * ローカルSQLファイルからスキーマを解析
+ * Parse schema from local SQL files
  */
 export async function parseLocalSchemas(schemaDir: string): Promise<Record<string, LocalSchema>> {
   const schemas: Record<string, LocalSchema> = {};
@@ -30,6 +30,8 @@ export async function parseLocalSchemas(schemaDir: string): Promise<Record<strin
   }
 
   const files = fs.readdirSync(schemaDir);
+  console.log(`Reading schema directory: ${schemaDir}`);
+  console.log(`Found SQL files: ${files.filter(f => f.endsWith('.sql')).join(', ') || 'none'}`);
   
   for (const file of files) {
     if (!file.endsWith('.sql')) continue;
@@ -38,12 +40,12 @@ export async function parseLocalSchemas(schemaDir: string): Promise<Record<strin
     const stats = fs.statSync(filePath);
     const fileContent = fs.readFileSync(filePath, 'utf-8');
     
-    // ファイル名からテーブル名を取得（.sqlを除く）
+    // Get table name from filename (without .sql)
     const tableName = path.basename(file, '.sql');
+    console.log(`Processing file: ${file} -> tableName: ${tableName}`);
     
-    // ファイル内のコメントからタイムスタンプを抽出
-    let timestamp = Math.floor(stats.mtime.getTime() / 1000); // フォールバック
-    
+    // Extract timestamp from comment in file; fallback to mtime
+    let timestamp = Math.floor(stats.mtime.getTime() / 1000);
     const timestampMatch = fileContent.match(/-- Remote last updated: (.+)/);
     if (timestampMatch) {
       try {
@@ -53,18 +55,18 @@ export async function parseLocalSchemas(schemaDir: string): Promise<Record<strin
           timestamp = Math.floor(parsedDate.getTime() / 1000);
         }
       } catch (error) {
-        // エラーの場合はファイル更新日時を使用
+        // On error use file mtime
       }
     }
     
-    // DDL部分のみを抽出（コメント行と空白行を完全に除外）
+    // Extract DDL only (exclude comment and blank lines)
     const ddlLines = fileContent.split('\n').filter(line => {
       const trimmed = line.trim();
       return trimmed && !trimmed.startsWith('--');
     });
     const rawDDL = ddlLines.join('\n').trim();
     
-    // DDLを正規化
+    // Normalize DDL
     const ddl = normalizeDDL(rawDDL);
     
     schemas[tableName] = {

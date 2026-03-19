@@ -89,14 +89,14 @@ export function main(): void {
             const typeNode = (typeAliasDecl as any).type;
             if (typeNode.kind === SyntaxKind.TypeLiteral && typeName === 'Database') {
                 console.log('Found Database type, processing schemas...');
-                // Database型内の全てのスキーマを処理
+                // Process all schemas inside Database type
                 return typeNode.members.flatMap((schemaMember: any) => {
                     if (schemaMember.name && schemaMember.type && schemaMember.type.kind === SyntaxKind.TypeLiteral) {
                         const schemaName = schemaMember.name.text;
                         console.log(`Processing schema: ${schemaName}`);
                         const schemaType = schemaMember.type;
                         
-                        // スキーマ内のTablesとViewsを処理
+                        // Process Tables and Views in schema
                         const tablesAndViewsType = schemaType.members.filter((member: any) => 
                             member.name && (member.name.text === 'Tables' || member.name.text === 'Views')
                         );
@@ -158,13 +158,13 @@ export function main(): void {
         return true;
       })
       .forEach(type => {
-        // スキーマごとにフォルダ分け
+        // Group by schema folder
         const schemaFolder = path.join(crudFolderPath, type.schema);
         if (!existsSync(schemaFolder)) {
           mkdirSync(schemaFolder, { recursive: true });
         }
         const fileName = toLowerCamelCase(type.typeName);
-        // スキーマフォルダ分けがある場合のインポートパス調整
+        // Adjust import path when using schema folders
         const hasSchemaFolders = types.some(t => t.schema !== type.schema);
         const crudCode = crudTemplate(type.typeName, type.fields, type.isView, type.schema, hasSchemaFolders);
         const filePath = path.join(schemaFolder, `${fileName}.ts`);
@@ -196,7 +196,7 @@ const toUpperCamelCase = (str: string) => {
     return str.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
   };
 
-// CRUDテンプレート本体 - エレガントな文字列生成
+// CRUD template body - string generation
 const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: string, hasSchemaFolders: boolean) => {
   const upperCamelTypeName = toUpperCamelCase(typeName);
   const getByIdFunctionName = 'select' + upperCamelTypeName + 'RowById';
@@ -207,13 +207,13 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
   const deleteFunctionName = 'delete' + upperCamelTypeName + 'Row';
   const idType = fields.find((field: any) => field.name === 'id')?.type || 'string';
 
-  // インポートパスを動的に調整
+  // Adjust import path dynamically
   const importPath = hasSchemaFolders ? '../../client' : '../client';
 
-  // ヘッダー部分
+  // Header section
   const header = [
     `// Supabase CRUD operations for ${typeName} (${schema} schema)`,
-    '// 自動生成ファイル',
+    '// Auto-generated file',
     `import { supabase } from "${importPath}";`,
     'import { Tables, TablesInsert, TablesUpdate } from "@shared/types";',
     '',
@@ -223,10 +223,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // フィルター適用関数
+  // Filter application function
   const filterFunction = [
     '/**',
-    ' * フィルター適用関数',
+    ' * Apply filters to query',
     ' */',
     'function applyFilters(query: any, filters: Filters): any {',
     '  for (const [key, value] of Object.entries(filters)) {',
@@ -258,10 +258,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // IDで1件取得
+  // Select by ID
   const selectById = [
     '/**',
-    ' * IDで1件取得',
+    ' * Select single row by ID',
     ' */',
     `export async function ${getByIdFunctionName}({ id }: { id: ${idType} }): Promise<${typeName} | null> {`,
     '  if (!id) throw new Error("ID is required");',
@@ -285,10 +285,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // フィルターで複数取得
+  // Select multiple by filters
   const selectMultiple = [
     '/**',
-    ' * フィルターで複数取得',
+    ' * Select multiple rows by filters',
     ' */',
     `export async function ${getByFiltersFunctionName}({ filters }: { filters: Filters }): Promise<${typeName}[]> {`,
     '  if (!filters || typeof filters !== "object") return [];',
@@ -306,10 +306,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // フィルターで1件取得
+  // Select single by filters
   const selectSingle = [
     '/**',
-    ' * フィルターで1件取得',
+    ' * Select single row by filters',
     ' */',
     `export async function ${getSingleByFiltersFunctionName}({ filters }: { filters: Filters }): Promise<${typeName} | null> {`,
     '  if (!filters || typeof filters !== "object") return null;',
@@ -330,10 +330,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // 追加（ビューでない場合のみ）
+  // Insert (only when not view)
   const insertOperation = isView ? '' : [
     '/**',
-    ' * 追加',
+    ' * Insert',
     ' */',
     `export async function ${createFunctionName}({ data }: { data: TablesInsert<"${typeName}"> }): Promise<${typeName}> {`,
     '  if (!data) throw new Error("Data is required for creation");',
@@ -355,10 +355,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // 更新（ビューでない場合のみ）
+  // Update (only when not view)
   const updateOperation = isView ? '' : [
     '/**',
-    ' * 更新',
+    ' * Update',
     ' */',
     `export async function ${updateFunctionName}({ id, data }: { id: ${idType}; data: TablesUpdate<"${typeName}"> }): Promise<${typeName}> {`,
     '  if (!id) throw new Error("ID is required for update");',
@@ -385,10 +385,10 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // 削除（ビューでない場合のみ）
+  // Delete (only when not view)
   const deleteOperation = isView ? '' : [
     '/**',
-    ' * 削除',
+    ' * Delete',
     ' */',
     `export async function ${deleteFunctionName}({ id }: { id: ${idType} }): Promise<boolean> {`,
     '  if (!id) throw new Error("ID is required for deletion");',
@@ -408,6 +408,6 @@ const crudTemplate = (typeName: string, fields: any[], isView: boolean, schema: 
     ''
   ].join('\n');
 
-  // 全体を結合
+  // Concatenate all sections
   return header + filterFunction + selectById + selectMultiple + selectSingle + insertOperation + updateOperation + deleteOperation;
 };

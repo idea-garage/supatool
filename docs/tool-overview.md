@@ -1,73 +1,54 @@
-# Supatool 概要
+# Supatool overview
 
-Supatoolは、YAML/JSON/TypeScript型定義からPostgreSQL用SQL・RLS・Supabase用CRUD TypeScriptコード、API仕様書を自動生成するCLIツールです。
+CLI for Supabase schema extraction, seed export, and deploy. See the [README](../README.md) for basic usage.
 
-## 主な特徴
-- テンプレートYAMLからプロジェクト雛形を即生成（supatool create <template>）
-- データモデルをYAML/JSON/TypeScriptで記述
-- テーブル・リレーション・RLSポリシーのSQL自動生成
-- Supabase用型付きCRUD関数のTypeScriptコード自動生成
-- API仕様書（OpenAPI/Markdown）自動生成
-- CLIコマンドで簡単操作
-- 拡張性・汎用性重視
+## Features
 
-## 想定ユースケース
-- Supabaseプロジェクトの初期設計・自動化
-- DBスキーマとアプリコードの一貫性維持
-- モデル駆動開発（MDD）
+- **extract** – Dump tables, views, RLS, functions, triggers from the DB into files. Outputs `llms.txt` as a catalog for AI/agents.
+- **seed** – Export selected table data as JSON. Writes an `llms.txt` index under `supabase/seeds/`.
+- **deploy** – Push local schema to remote (use `--dry-run` to preview).
+- **gen:*** – Generate SQL, types, CRUD, RLS, docs from YAML/JSON models (CRUD generation is deprecated; prefer writing code with an LLM).
 
-## バージョン
-- ver0.1 supabase types.tsからのsupabase-js CRUDコード自動生成
+## Use cases
 
-## コマンド例
+- Keep Supabase schema in files and feed them to LLMs or agents.
+- Export table data as seed JSON for AI-assisted coding.
+- Deploy DDL edited locally to remote.
+
+## Command examples
+
 ```sh
-# テンプレートYAML雛形を生成
-supatool create simple
-supatool create saas
-supatool create blog
+# Extract full schema
+supatool extract --all -o supabase/schemas
 
-# 型定義(TypeScript)生成
-supatool gen:types docs/model-schema-example.yaml
+# Multiple schemas and table filter
+supatool extract --schema public,agent -t "user_*" -o supabase/schemas
 
-# CRUD関数(TypeScript)生成
-supatool gen:crud docs/model-schema-example.yaml
+# Seed export
+supatool seed --tables tables.yaml
 
-# テーブル・リレーションSQL生成
-supatool gen:sql docs/model-schema-example.yaml
-
-# RLS/セキュリティポリシーSQL生成
-supatool gen:rls docs/model-schema-example.yaml
-
-# ドキュメント(Markdown)生成
-supatool gen:docs docs/model-schema-example.yaml
-
-# すべて一括生成
-supatool gen:all docs/model-schema-example.yaml
+# Deploy (dry run)
+supatool deploy --dry-run
 ```
 
+From a YAML model (gen:types, gen:crud are deprecated):
 
----
-
-## 他アプリ（TypeScript）からの利用
-
-Supatoolのコア機能はTypeScriptモジュールとしても利用可能です。
-CLIだけでなく、モノレポ内の他アプリやスクリプトから直接呼び出せます。
-
-```typescript
-import { parseModel, generateSQL } from 'supatool/src';
-
-const model = parseModel('model.yaml');
-const sql = generateSQL(model);
+```sh
+supatool gen:types path/to/model.yaml
+supatool gen:sql path/to/model.yaml
+supatool gen:rls path/to/model.yaml
+supatool gen:docs path/to/model.yaml
+supatool gen:all path/to/model.yaml
 ```
 
----
+## Use from TypeScript
 
-## 今後の拡張
-- ER図自動生成
-- UI/ドキュメント自動生成
-- API仕様書生成の拡張
-- プラグインによる機能追加
-- Supabase組み込みauth.usersテーブル等は「作成不要」フラグ（skipCreate等）で管理
-- テーブル定義書（Markdown等）で主キー情報を明示
-- skeleton, todo, project等テンプレートごとに雛形モデル構造を整理
-- グラフ理論（ノード・エッジ型モデル）拡張方針を今後の拡張に追加 
+Core functionality is available as a TypeScript module.
+
+```ts
+import { parseModel, generateSQL } from 'supatool';
+```
+
+## Related docs
+
+- [tool-design.md](./tool-design.md) – Design and seed spec

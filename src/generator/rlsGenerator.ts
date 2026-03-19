@@ -1,19 +1,19 @@
-// RLS/セキュリティポリシーSQL自動生成（最小雛形）
-// Todo: スキーマを設定可能とする
+// RLS/security policy SQL auto-generation (minimal template)
+// Todo: make schema configurable
 import path from 'path';
 import fs from 'fs';
 
 /**
- * モデルからRLS/セキュリティポリシーSQLを生成
- * @param model モデルオブジェクト
- * @param outPath 出力先パス
+ * Generate RLS/security policy SQL from model
+ * @param model Model object
+ * @param outPath Output path
  */
 export function generateRlsSqlFromModel(model: any, outPath: string) {
   const dir = path.dirname(outPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  // dataSchema/models両対応: テーブル一覧取得
+  // dataSchema/models: get table list
   let tables: any[] = [];
   if (Array.isArray(model.dataSchema)) {
     tables = model.dataSchema.map((t: any) => ({ tableName: t.tableName || t.raw, ...t }));
@@ -26,11 +26,11 @@ export function generateRlsSqlFromModel(model: any, outPath: string) {
       }
     }
   }
-  let sql = '-- 自動生成: RLS/セキュリティポリシーDDL\n\n';
+  let sql = '-- Auto-generated: RLS/security policy DDL\n\n';
   const security = model.security || {};
-  // roles定義があればロールマスタ・ユーザーロールDDLも自動生成
+  // If roles defined, auto-generate role master and user_roles DDL
   if (model.roles && Array.isArray(model.roles)) {
-    sql += '-- ロールマスタ・ユーザーロールDDL（自動生成）\n';
+    sql += '-- Role master and user_roles DDL (auto-generated)\n';
     sql += `CREATE TABLE IF NOT EXISTS m_roles (\n  id uuid PRIMARY KEY,\n  name text NOT NULL\n);\n\n`;
     sql += `CREATE TABLE IF NOT EXISTS user_roles (\n  id uuid PRIMARY KEY,\n  user_id uuid NOT NULL,\n  role_id uuid NOT NULL\n);\n\n`;
     for (const role of model.roles) {
@@ -38,47 +38,47 @@ export function generateRlsSqlFromModel(model: any, outPath: string) {
     }
     sql += '\n';
   }
-  // DBファンクション
+  // DB function
   if (security.functions) {
     for (const [fnName, fn] of Object.entries(security.functions)) {
       const f = fn as any;
-      const useTemplate = f.use_template !== false; // デフォルトtrue
+      const useTemplate = f.use_template !== false; // default true
       const templateType = f.template_type || 'simple';
       let sqlBody = f.sql;
       if (!sqlBody && useTemplate) {
-        // template_type優先
+        // template_type takes precedence
         if (templateType) {
           sqlBody = getFunctionTemplate(fnName, templateType, model);
         }
       }
-      // fallback: roles定義があればuser_roles参照テンプレ
+      // fallback: if roles defined use user_roles template
       if (!sqlBody) {
         if (model.roles && Array.isArray(model.roles)) {
-          sqlBody = `CREATE FUNCTION ${fnName}() RETURNS text AS $$\nBEGIN\n  -- ログインユーザーのロールを返す（テンプレ）\n  RETURN (SELECT r.name FROM user_roles ur JOIN m_roles r ON ur.role_id = r.id WHERE ur.user_id = current_setting('request.jwt.claim.sub', true)::uuid LIMIT 1);\nEND;\n$$ LANGUAGE plpgsql;`;
+          sqlBody = `CREATE FUNCTION ${fnName}() RETURNS text AS $$\nBEGIN\n  -- Return current user role (template)\n  RETURN (SELECT r.name FROM user_roles ur JOIN m_roles r ON ur.role_id = r.id WHERE ur.user_id = current_setting('request.jwt.claim.sub', true)::uuid LIMIT 1);\nEND;\n$$ LANGUAGE plpgsql;`;
         } else {
-          sqlBody = `CREATE FUNCTION ${fnName}() RETURNS text AS $$\nBEGIN\n  -- TODO: ロジックを記述\n  RETURN 'admin';\nEND;\n$$ LANGUAGE plpgsql;`;
+          sqlBody = `CREATE FUNCTION ${fnName}() RETURNS text AS $$\nBEGIN\n  -- TODO: implement logic\n  RETURN 'admin';\nEND;\n$$ LANGUAGE plpgsql;`;
         }
       }
-      sql += `-- ${fnName}関数: ユーザーのロール取得\n`;
+      sql += `-- ${fnName} function: get user role\n`;
       sql += `${sqlBody}\n\n`;
     }
   }
-  // RLSポリシー
+  // RLS policies
   if (security.policies) {
     for (const [tableName, tablePolicies] of Object.entries(security.policies)) {
       const p = tablePolicies as any;
       for (const [action, policy] of Object.entries(p)) {
         const pol = policy as any;
-        const useTemplate = pol.use_template !== false; // デフォルトtrue
+        const useTemplate = pol.use_template !== false; // default true
         const templateType = pol.template_type || 'simple';
         let usingCond = pol.using;
         if (!usingCond && useTemplate && pol.role && Array.isArray(pol.role)) {
           usingCond = getPolicyTemplate(pol.role, templateType);
         }
         if (!usingCond) {
-          usingCond = 'true -- TODO: 適切な条件を記述';
+          usingCond = 'true -- TODO: write appropriate condition';
         }
-        sql += `-- ${tableName}テーブル ${action}用RLSポリシー\n`;
+        sql += `-- ${tableName} table RLS policy for ${action}\n`;
         sql += `ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;\n`;
         sql += `CREATE POLICY ${tableName}_${action}_policy ON ${tableName}\n  FOR ${action.toUpperCase()}\n  USING (${usingCond});\n\n`;
       }
@@ -87,7 +87,7 @@ export function generateRlsSqlFromModel(model: any, outPath: string) {
   fs.writeFileSync(outPath, sql);
 }
 
-// テンプレート切り替え関数
+// Template switcher function
 function getFunctionTemplate(fnName: string, type: string, model: any): string {
   const templatePath = path.join(__dirname, '../templates/rls', `function_${type}.sql`);
   let template = fs.readFileSync(templatePath, 'utf-8');

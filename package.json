@@ -1,17 +1,17 @@
 {
   "name": "supatool",
-  "version": "0.3.7",
-  "description": "A CLI tool for Supabase schema extraction and TypeScript CRUD generation with declarative database schema support.",
+  "version": "0.4.2",
+  "description": "CLI for Supabase: extract schema (tables, views, RLS, RPC) to files + llms.txt for LLM, deploy local schema, seed export. CRUD code gen deprecated.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "supatool": "dist/bin/supatool.js"
   },
-  "scripts": {
-    "build": "tsc",
-    "postbuild": "npm link",
-    "start": "tsx bin/supatool.ts"
-  },
+"scripts": {
+  "build": "tsc",
+  "start": "tsx src/bin/supatool.ts",
+  "local": "tsx src/bin/supatool.ts"
+},
   "files": [
     "dist",
     "bin"
@@ -43,7 +43,7 @@
   "devDependencies": {
     "@types/diff": "^7.0.2",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20.17.30",
+    "@types/node": "^20.19.22",
     "@types/pg": "^8.11.0"
   },
   "exports": {

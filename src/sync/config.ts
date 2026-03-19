@@ -2,11 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { config } from 'dotenv';
 
-// プロジェクト内の.env/.env.localファイルを読み込み
+// Load .env / .env.local in project
 const envPath = path.join(process.cwd(), '.env');
 const envLocalPath = path.join(process.cwd(), '.env.local');
 
-// .env.local が優先される
+// .env.local takes precedence
 if (fs.existsSync(envLocalPath)) {
   config({ path: envLocalPath });
 } else if (fs.existsSync(envPath)) {
@@ -20,7 +20,7 @@ export interface SyncConfig {
 }
 
 /**
- * 設定ファイルから設定を読み込み
+ * Load settings from config file
  */
 export function loadConfig(configPath?: string): Partial<SyncConfig> {
   const defaultConfigPath = path.join(process.cwd(), 'supatool.config.json');
@@ -31,7 +31,7 @@ export function loadConfig(configPath?: string): Partial<SyncConfig> {
       const configData = fs.readFileSync(finalConfigPath, 'utf-8');
       return JSON.parse(configData);
     } catch (error) {
-      console.warn(`設定ファイル読み込みエラー: ${finalConfigPath}`);
+      console.warn(`Configuration file load error: ${finalConfigPath}`);
       return {};
     }
   }
@@ -40,7 +40,7 @@ export function loadConfig(configPath?: string): Partial<SyncConfig> {
 }
 
 /**
- * 環境変数と設定ファイルから最終設定を取得
+ * Resolve final settings from env and config file
  */
 export function resolveConfig(options: Partial<SyncConfig>, configPath?: string): SyncConfig {
   const fileConfig = loadConfig(configPath);
@@ -57,18 +57,18 @@ export function resolveConfig(options: Partial<SyncConfig>, configPath?: string)
 }
 
 /**
- * 設定ファイル雛形を生成
+ * Generate config file template
  */
 export function createConfigTemplate(outputPath: string): void {
   const template = {
     connectionString: "postgresql://user:password@host:port/database",
     schemaDir: "./supabase/schemas",
     tablePattern: "*",
-    "_comment": "接続文字列は .env または .env.local ファイルでSUPABASE_CONNECTION_STRINGまたはDATABASE_URLで設定することを推奨"
+    "_comment": "It is recommended to set connection string in .env or .env.local file using SUPABASE_CONNECTION_STRING or DATABASE_URL"
   };
   
   fs.writeFileSync(outputPath, JSON.stringify(template, null, 2), 'utf-8');
-  console.log(`設定ファイル雛形を生成: ${outputPath}`);
-  console.log('⚠️  設定ファイルを.gitignoreに追加することを忘れずに！');
-  console.log('💡 接続文字列は .env または .env.local ファイルで管理してください');
+  console.log(`Configuration template generated: ${outputPath}`);
+  console.log('⚠️  Remember to add the configuration file to .gitignore!');
+  console.log('💡 Manage connection string in .env or .env.local file');
 } 

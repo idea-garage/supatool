@@ -1,5 +1,4 @@
-// Supabaseクライアント定義（自動生成/手動編集可）
-// 日本語コメント
+// Supabase client definition (auto-generated / editable)
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL || '';

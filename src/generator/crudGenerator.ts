@@ -1,13 +1,12 @@
-// CRUD関数TypeScriptコード自動生成（Supabase実動作対応）
-// 日本語コメント
+// CRUD TypeScript code auto-generation (Supabase-compatible)
 import path from 'path';
 import fs from 'fs';
 import type { TableDef, ModelDef } from './types';
 
 /**
- * dataSchemaまたはmodels/tablesから各テーブルごとのCRUD関数TypeScriptファイルを生成
- * @param model モデルオブジェクト
- * @param outDir 出力先ディレクトリ
+ * Generate CRUD TypeScript file per table from dataSchema or models/tables
+ * @param model Model object
+ * @param outDir Output directory
  */
 export function generateCrudFromModel(model: any, outDir: string) {
   if (!fs.existsSync(outDir)) {
@@ -30,17 +29,17 @@ export function generateCrudFromModel(model: any, outDir: string) {
     const tableName = tableObj.tableName;
     const capitalizedName = capitalize(tableName);
     
-    let code = `// 自動生成: ${tableName}用CRUD関数\n\n`;
+    let code = `// Auto-generated: CRUD for ${tableName}\n\n`;
     code += `import { supabase } from '../client';\n`;
     code += `import type { ${tableName} } from '../types';\n\n`;
     
-    // 型定義
-    code += `// フィルター型定義\n`;
+    // Type definitions
+    code += `// Filter type definition\n`;
     code += `type FilterValue = string | number | boolean | null;\n`;
     code += `type Filters = Record<string, FilterValue | FilterValue[]>;\n\n`;
     
-    // 全件取得関数（改良版）
-    code += `/** 全件取得 */\n`;
+    // Select all (improved)
+    code += `/** Select all */\n`;
     code += `export async function select${capitalizedName}Rows(): Promise<${tableName}[]> {\n`;
     code += `  try {\n`;
     code += `    const { data, error } = await supabase.from('${tableName}').select('*');\n`;
@@ -58,8 +57,8 @@ export function generateCrudFromModel(model: any, outDir: string) {
     code += `  }\n`;
     code += `}\n\n`;
     
-    // IDで1件取得関数（改良版）
-    code += `/** IDで1件取得 */\n`;
+    // Select by ID (improved)
+    code += `/** Select by ID */\n`;
     code += `export async function select${capitalizedName}RowById({ id }: { id: string }): Promise<${tableName} | null> {\n`;
     code += `  if (!id) {\n`;
     code += `    throw new Error('ID is required');\n`;
@@ -67,7 +66,7 @@ export function generateCrudFromModel(model: any, outDir: string) {
     code += `  try {\n`;
     code += `    const { data, error } = await supabase.from('${tableName}').select('*').eq('id', id).single();\n`;
     code += `    if (error) {\n`;
-    code += `      // レコードが見つからない場合（PGRST116）は null を返す\n`;
+    code += `      // Return null when record not found (PGRST116)\n`;
     code += `      if (error.code === 'PGRST116') {\n`;
     code += `        return null;\n`;
     code += `      }\n`;
@@ -81,15 +80,15 @@ export function generateCrudFromModel(model: any, outDir: string) {
     code += `  }\n`;
     code += `}\n\n`;
     
-    // フィルターで検索関数
-    code += `/** フィルターで複数件取得 */\n`;
+    // Select by filters
+    code += `/** Select multiple by filters */\n`;
     code += `export async function select${capitalizedName}RowsWithFilters({ filters }: { filters: Filters }): Promise<${tableName}[]> {\n`;
-    code += `  // filtersのガード\n`;
+    code += `  // Guard for filters\n`;
     code += `  if (!filters || typeof filters !== 'object') return [];\n`;
     code += `  try {\n`;
     code += `    let query = supabase.from('${tableName}').select('*');\n`;
     code += `    \n`;
-    code += `    // フィルターを適用\n`;
+    code += `    // Apply filters\n`;
     code += `    for (const [key, value] of Object.entries(filters)) {\n`;
     code += `      if (Array.isArray(value)) {\n`;
     code += `        query = query.in(key, value);\n`;
@@ -110,8 +109,8 @@ export function generateCrudFromModel(model: any, outDir: string) {
     code += `  }\n`;
     code += `}\n\n`;
     
-    // 作成関数
-    code += `/** 新規作成 */\n`;
+    // Insert
+    code += `/** Insert */\n`;
     code += `export async function insert${capitalizedName}Row({ data }: { data: Omit<${tableName}, 'id' | 'created_at' | 'updated_at'> }): Promise<${tableName}> {\n`;
     code += `  if (!data) {\n`;
     code += `    throw new Error('Data is required for creation');\n`;
@@ -136,8 +135,8 @@ export function generateCrudFromModel(model: any, outDir: string) {
     code += `  }\n`;
     code += `}\n\n`;
     
-    // 更新関数
-    code += `/** 更新 */\n`;
+    // Update
+    code += `/** Update */\n`;
     code += `export async function update${capitalizedName}Row({ id, data }: { id: string; data: Partial<Omit<${tableName}, 'id' | 'created_at'>> }): Promise<${tableName}> {\n`;
     code += `  if (!id) {\n`;
     code += `    throw new Error('ID is required for update');\n`;
@@ -169,8 +168,8 @@ export function generateCrudFromModel(model: any, outDir: string) {
     code += `  }\n`;
     code += `}\n\n`;
     
-    // 削除関数
-    code += `/** 削除 */\n`;
+    // Delete
+    code += `/** Delete */\n`;
     code += `export async function delete${capitalizedName}Row({ id }: { id: string }): Promise<boolean> {\n`;
     code += `  if (!id) {\n`;
     code += `    throw new Error('ID is required for deletion');\n`;

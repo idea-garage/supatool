@@ -5,8 +5,9 @@ export interface TableDefinition {
   type: 'table' | 'view' | 'rls' | 'function' | 'trigger' | 'cron' | 'type';
   ddl: string;
   timestamp: number;
-  category?: string; // テーブル名やオブジェクト名
-  comment?: string; // コメント
+  category?: string; // table or object name (e.g. schema.table)
+  comment?: string; // comment
+  schema?: string;  // schema name (for output path and merge grouping)
 }
 
 export interface DefinitionExtractOptions {
@@ -18,7 +19,20 @@ export interface DefinitionExtractOptions {
   all?: boolean;
   tablePattern?: string;
   force?: boolean;
-  schemas?: string[]; // 対象スキーマ（デフォルト: ['public']）
+  schemas?: string[]; // target schemas (default: ['public'])
+  version?: string;   // for output header (supatool version)
+}
+
+/** Single FK relation (for llms.txt RELATIONS) */
+export interface SchemaRelation {
+  from: string; // schema.table
+  to: string;   // schema.table
+}
+
+/** Tables referenced by an RPC (for llms.txt RPC_TABLES) */
+export interface RpcTableUsage {
+  rpc: string;   // schema.fn_name
+  tables: string[]; // schema.table[]
 }
 
 interface ProgressTracker {
@@ -32,31 +46,31 @@ interface ProgressTracker {
 }
 
 /**
- * 進行状況を表示
+ * Display progress
  */
-// グローバルなプログレス状態を保存
+// Store global progress state
 let globalProgress: ProgressTracker | null = null;
 let progressUpdateInterval: NodeJS.Timeout | null = null;
 
 function displayProgress(progress: ProgressTracker, spinner: any) {
-  // グローバル状態を更新
+  // Update global state
   globalProgress = progress;
   
-  // 定期更新を開始（まだ開始していない場合）
+  // Start periodic update if not already
   if (!progressUpdateInterval) {
     progressUpdateInterval = setInterval(() => {
       if (globalProgress && spinner) {
         updateSpinnerDisplay(globalProgress, spinner);
       }
-    }, 80); // 80msで常時更新
+    }, 80); // Update every 80ms
   }
   
-  // 即座に表示を更新
+  // Update display immediately
   updateSpinnerDisplay(progress, spinner);
 }
 
 function updateSpinnerDisplay(progress: ProgressTracker, spinner: any) {
-  // 全体進捗を計算
+  // Compute overall progress
   const totalObjects = progress.tables.total + progress.views.total + progress.rls.total + 
                       progress.functions.total + progress.triggers.total + progress.cronJobs.total + 
                       progress.customTypes.total;
@@ -64,7 +78,7 @@ function updateSpinnerDisplay(progress: ProgressTracker, spinner: any) {
                           progress.functions.current + progress.triggers.current + progress.cronJobs.current + 
                           progress.customTypes.current;
 
-  // プログレスバーを生成（稲妻が単純に増えていく）
+  // Build progress bar
   const createProgressBar = (current: number, total: number, width: number = 20) => {
     if (total === 0) return '░'.repeat(width);
     
@@ -72,33 +86,30 @@ function updateSpinnerDisplay(progress: ProgressTracker, spinner: any) {
     const filled = Math.floor(percentage * width);
     const empty = width - filled;
     
-    // 稲妻で単純に埋める（文字の入れ替えなし）
     return '⚡'.repeat(filled) + '░'.repeat(empty);
   };
 
-  // 全体プログレスバーのみ表示（コンソール幅に収める）
+  // Show overall bar only (fit to console width)
   const overallBar = createProgressBar(completedObjects, totalObjects, 20);
   const overallPercent = totalObjects > 0 ? Math.floor((completedObjects / totalObjects) * 100) : 0;
   
-  // 緑色回転スピナー（常時回転）
+  // Green rotating spinner
   const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const spinnerFrame = Math.floor((Date.now() / 80) % spinnerFrames.length);
   const greenSpinner = `\x1b[32m${spinnerFrames[spinnerFrame]}\x1b[0m`;
   
-  // ドットアニメーション
+  // Dot animation
   const dotFrames = ["", ".", "..", "..."];
   const dotFrame = Math.floor((Date.now() / 400) % dotFrames.length);
   
-  // 解析中メッセージ
   const statusMessage = "Extracting";
   
-  // 改行制御付きコンパクト表示（緑色スピナー付き）
   const display = `\r${greenSpinner} [${overallBar}] ${overallPercent}% (${completedObjects}/${totalObjects}) ${statusMessage}${dotFrames[dotFrame]}`;
   
   spinner.text = display;
 }
 
-// 進捗表示を停止する関数
+// Stop progress display
 function stopProgressDisplay() {
   if (progressUpdateInterval) {
     clearInterval(progressUpdateInterval);
@@ -108,7 +119,7 @@ function stopProgressDisplay() {
 }
 
 /**
- * RLSポリシーを取得
+ * Fetch RLS policies
  */
 async function fetchRlsPolicies(client: Client, spinner?: any, progress?: ProgressTracker, schemas: string[] = ['public']): Promise<TableDefinition[]> {
   const policies: TableDefinition[] = [];
@@ -142,7 +153,7 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
 
   const tableKeys = Object.keys(groupedPolicies);
   
-  // 進行状況の初期化
+  // Initialize progress
   if (progress) {
     progress.rls.total = tableKeys.length;
   }
@@ -154,12 +165,12 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
     const schemaName = firstPolicy.schemaname;
     const tableName = firstPolicy.tablename;
     
-    // 進行状況を更新
+    // Update progress
     if (progress && spinner) {
       progress.rls.current = i + 1;
       displayProgress(progress, spinner);
     }
-    // RLSポリシー説明を先頭に追加
+    // Add RLS policy description at top
     let ddl = `-- RLS Policies for ${schemaName}.${tableName}\n`;
     ddl += `-- Row Level Security policies to control data access at the row level\n\n`;
     
@@ -172,15 +183,15 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
       ddl += `  FOR ${policy.cmd || 'ALL'}\n`;
       
       if (policy.roles) {
-        // rolesが配列の場合と文字列の場合を処理
+        // Handle roles as array or string
         let roles: string;
         if (Array.isArray(policy.roles)) {
           roles = policy.roles.join(', ');
         } else {
-          // PostgreSQLの配列リテラル形式 "{role1,role2}" または単純な文字列を処理
+          // Handle PostgreSQL array literal "{role1,role2}" or plain string
           roles = String(policy.roles)
-            .replace(/[{}]/g, '') // 中括弧を除去
-            .replace(/"/g, ''); // ダブルクォートを除去
+            .replace(/[{}]/g, '') // Remove braces
+            .replace(/"/g, ''); // Remove double quotes
         }
         
         if (roles && roles.trim() !== '') {
@@ -203,6 +214,7 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
       name: `${schemaName}_${tableName}_policies`,
       type: 'rls',
       category: `${schemaName}.${tableName}`,
+      schema: schemaName,
       ddl,
       timestamp: Math.floor(Date.now() / 1000)
     });
@@ -216,8 +228,122 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
   }
 }
 
+/** Per-table RLS enabled/disabled and policy count (for Tables docs and warnings) */
+export interface TableRlsStatus {
+  schema: string;
+  table: string;
+  rlsEnabled: boolean;
+  policyCount: number;
+}
+
 /**
- * 関数を取得
+ * Fetch RLS enabled flag and policy count for all tables (pg_class.relrowsecurity + pg_policies)
+ */
+async function fetchTableRlsStatus(client: Client, schemas: string[] = ['public']): Promise<TableRlsStatus[]> {
+  if (schemas.length === 0) return [];
+  const schemaPlaceholders = schemas.map((_, i) => `$${i + 1}`).join(', ');
+  const result = await client.query(`
+    SELECT
+      n.nspname AS schema_name,
+      c.relname AS table_name,
+      COALESCE(c.relrowsecurity, false) AS rls_enabled
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind = 'r'
+      AND n.nspname IN (${schemaPlaceholders})
+    ORDER BY n.nspname, c.relname
+  `, schemas);
+
+  const policyCountMap = new Map<string, number>();
+  const policyResult = await client.query(`
+    SELECT schemaname, tablename, COUNT(*) AS cnt
+    FROM pg_policies
+    WHERE schemaname IN (${schemaPlaceholders})
+    GROUP BY schemaname, tablename
+  `, schemas);
+  for (const row of policyResult.rows as any[]) {
+    policyCountMap.set(`${row.schemaname}.${row.tablename}`, parseInt(row.cnt, 10));
+  }
+
+  return result.rows.map((r: any) => {
+    const key = `${r.schema_name}.${r.table_name}`;
+    return {
+      schema: r.schema_name,
+      table: r.table_name,
+      rlsEnabled: !!r.rls_enabled,
+      policyCount: policyCountMap.get(key) ?? 0
+    };
+  });
+}
+
+/**
+ * Fetch FK relations list (for llms.txt RELATIONS)
+ */
+async function fetchRelationList(client: Client, schemas: string[] = ['public']): Promise<SchemaRelation[]> {
+  if (schemas.length === 0) return [];
+  const schemaPlaceholders = schemas.map((_, i) => `$${i + 1}`).join(', ');
+  const result = await client.query(`
+    SELECT
+      tc.table_schema AS from_schema,
+      tc.table_name AS from_table,
+      ccu.table_schema AS to_schema,
+      ccu.table_name AS to_table
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.constraint_column_usage ccu
+      ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND tc.table_schema IN (${schemaPlaceholders})
+    ORDER BY tc.table_schema, tc.table_name
+  `, schemas);
+  return result.rows.map((r: any) => ({
+    from: `${r.from_schema}.${r.from_table}`,
+    to: `${r.to_schema}.${r.to_table}`
+  }));
+}
+
+/**
+ * Fetch all schemas in DB (for llms.txt ALL_SCHEMAS / unrextracted schemas)
+ */
+async function fetchAllSchemas(client: Client): Promise<string[]> {
+  const result = await client.query(`
+    SELECT schema_name
+    FROM information_schema.schemata
+    WHERE schema_name NOT LIKE 'pg_%'
+      AND schema_name != 'information_schema'
+      AND schema_name != 'pg_catalog'
+    ORDER BY schema_name
+  `);
+  return result.rows.map((r: any) => r.schema_name);
+}
+
+/**
+ * Extract table refs from function DDL (heuristic, best-effort)
+ */
+function extractTableRefsFromFunctionDdl(ddl: string, defaultSchema: string = 'public'): string[] {
+  const seen = new Set<string>();
+  const add = (schema: string, table: string) => {
+    const key = `${schema}.${table}`;
+    if (!seen.has(key)) seen.add(key);
+  };
+  // schema.table form
+  const schemaTableRe = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM|INSERT\s+INTO)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = schemaTableRe.exec(ddl)) !== null) {
+    add(m[1], m[2]);
+  }
+  // Unqualified table name (after FROM / JOIN / INSERT INTO / UPDATE / DELETE FROM)
+  const unqualifiedRe = /(?:FROM|JOIN|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s|$|\)|,)/gi;
+  while ((m = unqualifiedRe.exec(ddl)) !== null) {
+    const name = m[1].toLowerCase();
+    if (!['select', 'where', 'on', 'and', 'or', 'inner', 'left', 'right', 'outer', 'cross', 'lateral'].includes(name)) {
+      add(defaultSchema, m[1]);
+    }
+  }
+  return Array.from(seen).sort();
+}
+
+/**
+ * Fetch functions
  */
 async function fetchFunctions(client: Client, spinner?: any, progress?: ProgressTracker, schemas: string[] = ['public']): Promise<TableDefinition[]> {
   const functions: TableDefinition[] = [];
@@ -238,7 +364,7 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
     ORDER BY n.nspname, p.proname
   `, schemas);
 
-  // 進行状況の初期化
+  // Initialize progress
   if (progress) {
     progress.functions.total = result.rows.length;
   }
@@ -246,16 +372,16 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
   for (let i = 0; i < result.rows.length; i++) {
     const row = result.rows[i];
     
-    // 進行状況を更新
+    // Update progress
     if (progress && spinner) {
       progress.functions.current = i + 1;
       displayProgress(progress, spinner);
     }
     
-    // 正確な関数シグネチャを構築（スキーマ名と引数の型を含む）
+    // Build exact function signature (schema name and argument types)
     const functionSignature = `${row.schema_name}.${row.name}(${row.identity_args || ''})`;
     
-    // 関数コメントを先頭に追加
+    // Add function comment at top
     let ddl = '';
     if (!row.comment) {
       ddl += `-- Function: ${functionSignature}\n`;
@@ -263,14 +389,14 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
       ddl += `-- ${row.comment}\n`;
     }
     
-    // 関数定義を追加（セミコロンを確実に付与）
+    // Add function definition (ensure semicolon)
     let functionDef = row.definition;
     if (!functionDef.trim().endsWith(';')) {
       functionDef += ';';
     }
     ddl += functionDef + '\n\n';
     
-    // COMMENT ON文を追加
+    // Add COMMENT ON statement
     if (!row.comment) {
       ddl += `-- COMMENT ON FUNCTION ${functionSignature} IS '_your_comment_here_';\n\n`;
     } else {
@@ -280,6 +406,7 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
     functions.push({
       name: row.name,
       type: 'function',
+      schema: row.schema_name,
       ddl,
       comment: row.comment,
       timestamp: Math.floor(Date.now() / 1000)
@@ -290,7 +417,7 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
 }
 
 /**
- * トリガーを取得
+ * Fetch triggers
  */
 async function fetchTriggers(client: Client, spinner?: any, progress?: ProgressTracker, schemas: string[] = ['public']): Promise<TableDefinition[]> {
   const triggers: TableDefinition[] = [];
@@ -310,7 +437,7 @@ async function fetchTriggers(client: Client, spinner?: any, progress?: ProgressT
     ORDER BY n.nspname, c.relname, t.tgname
   `, schemas);
 
-  // 進行状況の初期化
+  // Initialize progress
   if (progress) {
     progress.triggers.total = result.rows.length;
   }
@@ -318,13 +445,13 @@ async function fetchTriggers(client: Client, spinner?: any, progress?: ProgressT
   for (let i = 0; i < result.rows.length; i++) {
     const row = result.rows[i];
     
-    // 進行状況を更新
+    // Update progress
     if (progress && spinner) {
       progress.triggers.current = i + 1;
       displayProgress(progress, spinner);
     }
     
-    // トリガー説明を先頭に追加
+    // Add trigger description at top
     let ddl = `-- Trigger: ${row.trigger_name} on ${row.schema_name}.${row.table_name}\n`;
     ddl += `-- Database trigger that automatically executes in response to certain events\n\n`;
     ddl += row.definition + ';';
@@ -333,6 +460,7 @@ async function fetchTriggers(client: Client, spinner?: any, progress?: ProgressT
       name: `${row.schema_name}_${row.table_name}_${row.trigger_name}`,
       type: 'trigger',
       category: `${row.schema_name}.${row.table_name}`,
+      schema: row.schema_name,
       ddl,
       timestamp: Math.floor(Date.now() / 1000)
     });
@@ -342,7 +470,7 @@ async function fetchTriggers(client: Client, spinner?: any, progress?: ProgressT
 }
 
 /**
- * Cronジョブを取得（pg_cron拡張）
+ * Fetch Cron jobs (pg_cron extension)
  */
 async function fetchCronJobs(client: Client, spinner?: any, progress?: ProgressTracker): Promise<TableDefinition[]> {
   const cronJobs: TableDefinition[] = [];
@@ -359,7 +487,7 @@ async function fetchCronJobs(client: Client, spinner?: any, progress?: ProgressT
       ORDER BY jobid
     `);
 
-    // 進行状況の初期化
+    // Initialize progress
     if (progress) {
       progress.cronJobs.total = result.rows.length;
     }
@@ -367,13 +495,13 @@ async function fetchCronJobs(client: Client, spinner?: any, progress?: ProgressT
     for (let i = 0; i < result.rows.length; i++) {
       const row = result.rows[i];
       
-      // 進行状況を更新
+      // Update progress
       if (progress && spinner) {
         progress.cronJobs.current = i + 1;
         displayProgress(progress, spinner);
       }
       
-      // Cronジョブ説明を先頭に追加
+      // Add Cron job description at top
       let ddl = `-- Cron Job: ${row.jobname || `job_${row.jobid}`}\n`;
       ddl += `-- Scheduled job that runs automatically at specified intervals\n`;
       ddl += `-- Schedule: ${row.schedule}\n`;
@@ -388,14 +516,14 @@ async function fetchCronJobs(client: Client, spinner?: any, progress?: ProgressT
       });
     }
   } catch (error) {
-    // pg_cron拡張がない場合はスキップ
+    // Skip when pg_cron extension is not present
   }
   
   return cronJobs;
 }
 
 /**
- * カスタム型を取得
+ * Fetch custom types
  */
 async function fetchCustomTypes(client: Client, spinner?: any, progress?: ProgressTracker, schemas: string[] = ['public']): Promise<TableDefinition[]> {
   const types: TableDefinition[] = [];
@@ -418,29 +546,29 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
     JOIN pg_namespace n ON t.typnamespace = n.oid
     WHERE n.nspname IN (${schemaPlaceholders})
       AND t.typtype IN ('e', 'c', 'd')
-      AND t.typisdefined = true  -- 定義済みの型のみ
-      AND NOT t.typarray = 0     -- 配列の基底型を除外
+      AND t.typisdefined = true  -- defined types only
+      AND NOT t.typarray = 0     -- exclude array base types
       AND NOT EXISTS (
-        -- テーブル、ビュー、インデックス、シーケンス、複合型と同名のものを除外
+        -- exclude same-name as table, view, index, sequence, composite
         SELECT 1 FROM pg_class c 
         WHERE c.relname = t.typname 
           AND c.relnamespace = n.oid
       )
       AND NOT EXISTS (
-        -- 関数・プロシージャと同名のものを除外
+        -- exclude same-name as function/procedure
         SELECT 1 FROM pg_proc p
         WHERE p.proname = t.typname
           AND p.pronamespace = n.oid
       )
-      AND t.typname NOT LIKE 'pg_%'     -- PostgreSQL内部型を除外
-      AND t.typname NOT LIKE '_%'       -- 配列型（アンダースコアで始まる）を除外
-      AND t.typname NOT LIKE '%_old'    -- 削除予定の型を除外
-      AND t.typname NOT LIKE '%_bak'    -- バックアップ型を除外
-      AND t.typname NOT LIKE 'tmp_%'    -- 一時的な型を除外
+      AND t.typname NOT LIKE 'pg_%'     -- exclude PostgreSQL built-in types
+      AND t.typname NOT LIKE '_%'       -- exclude array types (leading underscore)
+      AND t.typname NOT LIKE '%_old'    -- exclude deprecated types
+      AND t.typname NOT LIKE '%_bak'    -- exclude backup types
+      AND t.typname NOT LIKE 'tmp_%'    -- exclude temporary types
     ORDER BY n.nspname, t.typname
   `, schemas);
 
-  // 進行状況の初期化
+  // Initialize progress
   if (progress) {
     progress.customTypes.total = result.rows.length;
   }
@@ -448,7 +576,7 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
   for (let i = 0; i < result.rows.length; i++) {
     const row = result.rows[i];
     
-    // 進行状況を更新
+    // Update progress
     if (progress && spinner) {
       progress.customTypes.current = i + 1;
       displayProgress(progress, spinner);
@@ -457,7 +585,7 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
     let ddl = '';
     
     if (row.type_category === 'enum') {
-      // ENUM型の詳細を取得
+      // Fetch ENUM type details
       const enumResult = await client.query(`
         SELECT enumlabel
         FROM pg_enum
@@ -470,13 +598,13 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
         ORDER BY enumsortorder
       `, [row.type_name, row.schema_name]);
       
-      // ENUM値が存在する場合のみDDLを生成
+      // Generate DDL only when ENUM values exist
       if (enumResult.rows.length > 0) {
         const labels = enumResult.rows.map(r => `'${r.enumlabel}'`).join(', ');
         ddl = `CREATE TYPE ${row.type_name} AS ENUM (${labels});`;
       }
     } else if (row.type_category === 'composite') {
-      // COMPOSITE型の詳細を取得
+      // Fetch COMPOSITE type details
       const compositeResult = await client.query(`
         SELECT 
           a.attname as column_name,
@@ -489,11 +617,11 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
           )
         )
         AND a.attnum > 0
-        AND NOT a.attisdropped  -- 削除されたカラムを除外
+        AND NOT a.attisdropped  -- exclude dropped columns
         ORDER BY a.attnum
       `, [row.type_name, row.schema_name]);
       
-      // コンポジット型の属性が存在する場合のみDDLを生成
+      // Generate DDL only when composite type has attributes
       if (compositeResult.rows.length > 0) {
         const columns = compositeResult.rows
           .map(r => `  ${r.column_name} ${r.column_type}`)
@@ -501,7 +629,7 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
         ddl = `CREATE TYPE ${row.type_name} AS (\n${columns}\n);`;
       }
     } else if (row.type_category === 'domain') {
-      // DOMAIN型の詳細を取得
+      // Fetch DOMAIN type details
       const domainResult = await client.query(`
         SELECT 
           pg_catalog.format_type(t.typbasetype, t.typtypmod) as base_type,
@@ -537,7 +665,7 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
     }
     
     if (ddl) {
-      // 型コメントを先頭に追加
+      // Add type comment at top
       let finalDdl = '';
       if (!row.comment) {
         finalDdl += `-- Type: ${row.type_name}\n`;
@@ -545,10 +673,10 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
         finalDdl += `-- ${row.comment}\n`;
       }
       
-      // 型定義を追加
+      // Add type definition
       finalDdl += ddl + '\n\n';
       
-      // COMMENT ON文を追加
+      // Add COMMENT ON statement
       if (!row.comment) {
         finalDdl += `-- COMMENT ON TYPE ${row.schema_name}.${row.type_name} IS '_your_comment_here_';\n\n`;
       } else {
@@ -556,8 +684,9 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
       }
       
       types.push({
-        name: `${row.schema_name}_${row.type_name}`,
+        name: row.type_name,
         type: 'type',
+        schema: row.schema_name,
         ddl: finalDdl,
         comment: row.comment,
         timestamp: Math.floor(Date.now() / 1000)
@@ -569,14 +698,14 @@ async function fetchCustomTypes(client: Client, spinner?: any, progress?: Progre
 }
 
 /**
- * データベースからテーブル定義を取得
+ * Fetch table definitions from database
  */
 async function fetchTableDefinitions(client: Client, spinner?: any, progress?: ProgressTracker, schemas: string[] = ['public']): Promise<TableDefinition[]> {
   const definitions: TableDefinition[] = [];
 
   const schemaPlaceholders = schemas.map((_, index) => `$${index + 1}`).join(', ');
   
-  // テーブル一覧を取得
+  // Fetch table list
   const tablesResult = await client.query(`
     SELECT tablename, schemaname, 'table' as type
     FROM pg_tables 
@@ -584,7 +713,7 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
     ORDER BY schemaname, tablename
   `, schemas);
 
-  // ビュー一覧を取得
+  // Fetch view list
   const viewsResult = await client.query(`
     SELECT viewname as tablename, schemaname, 'view' as type
     FROM pg_views 
@@ -596,25 +725,25 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
   const tableCount = tablesResult.rows.length;
   const viewCount = viewsResult.rows.length;
 
-  // 進行状況の初期化
+  // Initialize progress
   if (progress) {
     progress.tables.total = tableCount;
     progress.views.total = viewCount;
   }
 
-  // 制限付き並行処理でテーブル/ビューを処理（接続数を制限）
-  // 環境変数で最大値を設定可能（デフォルト20、最大50）
+  // Process tables/views with limited concurrency (cap connection count)
+  // Max configurable via env (default 20, max 50)
   const envValue = process.env.SUPATOOL_MAX_CONCURRENT || '20';
   const MAX_CONCURRENT = Math.min(50, parseInt(envValue));
-  // 環境変数で設定された値を使用（最小5でキャップ）
+  // Use env value (capped at minimum 5)
   const CONCURRENT_LIMIT = Math.max(5, MAX_CONCURRENT);
   
-  // デバッグログ（開発時のみ）
+  // Debug log (development only)
   if (process.env.NODE_ENV === 'development' || process.env.SUPATOOL_DEBUG) {
     console.log(`Processing ${allObjects.length} objects with ${CONCURRENT_LIMIT} concurrent operations`);
   }
   
-  // テーブル/ビュー処理のPromise生成関数
+  // Promise factory for table/view processing
   const processObject = async (obj: any, index: number) => {
     const isTable = obj.type === 'table';
     const name = obj.tablename;
@@ -626,9 +755,9 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
     let timestamp = Math.floor(new Date('2020-01-01').getTime() / 1000);
 
     if (type === 'table') {
-      // テーブルの場合
+      // Table case
       try {
-        // テーブルの最終更新時刻を取得
+        // Get table last updated time
         const tableStatsResult = await client.query(`
           SELECT 
             EXTRACT(EPOCH FROM GREATEST(
@@ -645,13 +774,13 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
           timestamp = tableStatsResult.rows[0].last_updated;
         }
       } catch (error) {
-        // エラーの場合はデフォルトタイムスタンプを使用
+        // On error use default timestamp
       }
 
-      // CREATE TABLE文を生成
+      // Generate CREATE TABLE statement
       ddl = await generateCreateTableDDL(client, name, schemaName);
       
-      // テーブルコメントを取得
+      // Get table comment
       try {
         const tableCommentResult = await client.query(`
           SELECT obj_description(c.oid) as table_comment
@@ -664,12 +793,12 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
           comment = tableCommentResult.rows[0].table_comment;
         }
       } catch (error) {
-        // エラーの場合はコメントなし
+        // On error no comment
       }
     } else {
-      // ビューの場合
+      // View case
       try {
-        // ビューの定義とsecurity_invoker設定を取得
+        // Get view definition and security_invoker setting
         const viewResult = await client.query(`
           SELECT 
             pv.definition,
@@ -687,7 +816,7 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
         if (viewResult.rows.length > 0) {
           const view = viewResult.rows[0];
           
-          // ビューのコメントを取得
+          // Get view comment
           const viewCommentResult = await client.query(`
             SELECT obj_description(c.oid) as view_comment
             FROM pg_class c
@@ -695,7 +824,7 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
             WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'v'
           `, [name, schemaName]);
 
-          // ビューコメントを先頭に追加
+          // Add view comment at top
           if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
             comment = viewCommentResult.rows[0].view_comment;
             ddl = `-- ${comment}\n`;
@@ -703,10 +832,10 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
             ddl = `-- View: ${name}\n`;
           }
 
-          // ビュー定義を追加
-          let ddlStart = `CREATE OR REPLACE VIEW ${name}`;
+          // Add view definition
+          let ddlStart = `CREATE OR REPLACE VIEW ${schemaName}.${name}`;
           
-          // security_invoker設定をチェック
+          // Check security_invoker setting
           if (view.reloptions) {
             for (const option of view.reloptions) {
               if (option.startsWith('security_invoker=')) {
@@ -723,14 +852,14 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
           
           ddl += ddlStart + ' AS\n' + view.definition + ';\n\n';
           
-          // COMMENT ON文を追加
+          // Add COMMENT ON statement
           if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
             ddl += `COMMENT ON VIEW ${schemaName}.${name} IS '${comment}';\n\n`;
           } else {
             ddl += `-- COMMENT ON VIEW ${schemaName}.${name} IS '_your_comment_here_';\n\n`;
           }
 
-          // ビューの作成時刻を取得（可能であれば）
+          // Get view creation time (if available)
           try {
             const viewStatsResult = await client.query(`
               SELECT EXTRACT(EPOCH FROM GREATEST(
@@ -746,17 +875,18 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
               timestamp = viewStatsResult.rows[0].last_updated;
             }
           } catch (error) {
-            // エラーの場合はデフォルトタイムスタンプを使用
+            // On error use default timestamp
           }
         }
       } catch (error) {
-        // エラーの場合はコメントなし
+        // On error no comment
       }
     }
 
     return {
-      name: schemaName === 'public' ? name : `${schemaName}_${name}`,
+      name,
       type,
+      schema: schemaName,
       ddl,
       timestamp,
       comment: comment || undefined,
@@ -764,30 +894,30 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
     };
   };
 
-  // シンプルなバッチ並行処理（確実な進行状況更新）
+  // Simple batch concurrency (reliable progress updates)
   const processedResults: (TableDefinition | null)[] = [];
   
   for (let i = 0; i < allObjects.length; i += CONCURRENT_LIMIT) {
     const batch = allObjects.slice(i, i + CONCURRENT_LIMIT);
     
-         // バッチを並行処理
+         // Process batch in parallel
      const batchPromises = batch.map(async (obj, batchIndex) => {
        try {
          const globalIndex = i + batchIndex;
          
-         // デバッグ: 処理開始
+         // Debug: start
          if (process.env.SUPATOOL_DEBUG) {
            console.log(`Starting ${obj.type} ${obj.tablename} (${globalIndex + 1}/${allObjects.length})`);
          }
          
          const result = await processObject(obj, globalIndex);
          
-         // デバッグ: 処理完了
+         // Debug: done
          if (process.env.SUPATOOL_DEBUG) {
            console.log(`Completed ${obj.type} ${obj.tablename} (${globalIndex + 1}/${allObjects.length})`);
          }
          
-         // 個別完了時に即座に進行状況を更新
+         // Update progress immediately on each completion
          if (result && progress && spinner) {
            if (result.isTable) {
              progress.tables.current = Math.min(progress.tables.current + 1, progress.tables.total);
@@ -804,12 +934,12 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
        }
      });
     
-    // バッチの完了を待機
+    // Wait for batch to complete
     const batchResults = await Promise.all(batchPromises);
     processedResults.push(...batchResults);
   }
 
-  // null値を除外してdefinitionsに追加
+  // Add to definitions excluding nulls
   for (const result of processedResults) {
     if (result) {
       const { isTable, ...definition } = result as any;
@@ -821,10 +951,10 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
 }
 
 /**
- * CREATE TABLE DDLを生成（並行処理版）
+ * Generate CREATE TABLE DDL (concurrent version)
  */
 async function generateCreateTableDDL(client: Client, tableName: string, schemaName: string = 'public'): Promise<string> {
-  // 全てのクエリを並行実行
+  // Run all queries in parallel
   const [
     columnsResult,
     primaryKeyResult,
@@ -833,7 +963,7 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
     uniqueConstraintResult,
     foreignKeyResult
   ] = await Promise.all([
-    // カラム情報を取得
+    // Get column info
     client.query(`
       SELECT 
         c.column_name,
@@ -852,7 +982,7 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       ORDER BY c.ordinal_position
     `, [schemaName, tableName]),
     
-    // 主キー情報を取得
+    // Get primary key info
     client.query(`
       SELECT column_name
       FROM information_schema.table_constraints tc
@@ -864,7 +994,7 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       ORDER BY kcu.ordinal_position
     `, [schemaName, tableName]),
     
-    // テーブルコメントを取得
+    // Get table comment
     client.query(`
       SELECT obj_description(c.oid) as table_comment
       FROM pg_class c
@@ -872,7 +1002,7 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'r'
     `, [tableName, schemaName]),
     
-    // カラムコメントを取得
+    // Get column comments
     client.query(`
       SELECT 
         c.column_name,
@@ -887,7 +1017,7 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       ORDER BY c.ordinal_position
     `, [schemaName, tableName]),
     
-    // UNIQUE制約を取得
+    // Get UNIQUE constraints
     client.query(`
       SELECT 
         tc.constraint_name,
@@ -902,7 +1032,7 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       ORDER BY tc.constraint_name
     `, [schemaName, tableName]),
     
-    // FOREIGN KEY制約を取得
+    // Get FOREIGN KEY constraints
     client.query(`
       SELECT 
         tc.constraint_name,
@@ -930,35 +1060,35 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
     }
   });
 
-  // テーブルコメントを先頭に追加（スキーマ名を含む）
+  // Add table comment at top (with schema name)
   let ddl = '';
   
-  // テーブルコメントを先頭に追加
+  // Add table comment at top
   if (tableCommentResult.rows.length > 0 && tableCommentResult.rows[0].table_comment) {
     ddl += `-- ${tableCommentResult.rows[0].table_comment}\n`;
   } else {
-    ddl += `-- Table: ${tableName}\n`;
+    ddl += `-- Table: ${schemaName}.${tableName}\n`;
   }
   
-  // CREATE TABLE文を生成
-  ddl += `CREATE TABLE IF NOT EXISTS ${tableName} (\n`;
+  // Generate CREATE TABLE (schema-qualified)
+  ddl += `CREATE TABLE IF NOT EXISTS ${schemaName}.${tableName} (\n`;
   const columnDefs: string[] = [];
   for (const col of columnsResult.rows) {
     const rawType: string = col.full_type ||
       ((col.data_type === 'USER-DEFINED' && col.udt_name) ? col.udt_name : col.data_type);
     let colDef = `  ${col.column_name} ${rawType}`;
     
-    // 長さ指定
+    // Length spec
     if (col.character_maximum_length) {
       colDef += `(${col.character_maximum_length})`;
     }
     
-    // NOT NULL制約
+    // NOT NULL constraint
     if (col.is_nullable === 'NO') {
       colDef += ' NOT NULL';
     }
     
-    // デフォルト値
+    // Default value
     if (col.column_default) {
       colDef += ` DEFAULT ${col.column_default}`;
     }
@@ -968,23 +1098,23 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
   
   ddl += columnDefs.join(',\n');
   
-  // 主キー制約
+  // Primary key constraint
   if (primaryKeyResult.rows.length > 0) {
     const pkColumns = primaryKeyResult.rows.map(row => row.column_name);
     ddl += `,\n  PRIMARY KEY (${pkColumns.join(', ')})`;
   }
 
-  // UNIQUE制約をCREATE TABLE内に追加
+  // Add UNIQUE constraints inside CREATE TABLE
   for (const unique of uniqueConstraintResult.rows) {
     ddl += `,\n  CONSTRAINT ${unique.constraint_name} UNIQUE (${unique.columns})`;
   }
 
-  // FOREIGN KEY制約をCREATE TABLE内に追加
+  // Add FOREIGN KEY constraints inside CREATE TABLE
   for (const fk of foreignKeyResult.rows) {
     ddl += `,\n  CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.columns}) REFERENCES ${fk.foreign_table_schema}.${fk.foreign_table_name} (${fk.foreign_columns})`;
   }
 
-  // CHECK制約をCREATE TABLE内に追加（必ず最後）
+  // Add CHECK constraints inside CREATE TABLE (must be last)
   const checkConstraintResult = await client.query(`
     SELECT 
       con.conname as constraint_name,
@@ -1003,16 +1133,16 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
   
   ddl += '\n);\n\n';
 
-  // COMMENT ON文を追加
+  // Add COMMENT ON statements
   if (tableCommentResult.rows.length > 0 && tableCommentResult.rows[0].table_comment) {
     ddl += `COMMENT ON TABLE ${schemaName}.${tableName} IS '${tableCommentResult.rows[0].table_comment}';\n\n`;
   } else {
     ddl += `-- COMMENT ON TABLE ${schemaName}.${tableName} IS '_your_comment_here_';\n\n`;
   }
 
-  // カラムコメントを追加（スキーマ名を含む）
+  // Add column comments (with schema name)
   if (columnComments.size > 0) {
-    ddl += '\n-- カラムコメント\n';
+    ddl += '\n-- Column comments\n';
     for (const [columnName, comment] of columnComments) {
       ddl += `COMMENT ON COLUMN ${schemaName}.${tableName}.${columnName} IS '${comment}';\n`;
     }
@@ -1022,205 +1152,361 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
 }
 
 /**
- * 定義をファイルに保存
+ * Save definitions to files (merge RLS/triggers into table/view; schema folders when multi-schema)
  */
-async function saveDefinitionsByType(definitions: TableDefinition[], outputDir: string, separateDirectories: boolean = true): Promise<void> {
+async function saveDefinitionsByType(
+  definitions: TableDefinition[],
+  outputDir: string,
+  separateDirectories: boolean = true,
+  schemas: string[] = ['public'],
+  relations: SchemaRelation[] = [],
+  rpcTables: RpcTableUsage[] = [],
+  allSchemas: string[] = [],
+  version?: string,
+  tableRlsStatus: TableRlsStatus[] = []
+): Promise<void> {
   const fs = await import('fs');
   const path = await import('path');
 
-  // 出力ディレクトリを作成
+  const outputDate = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const npmUrl = 'https://www.npmjs.com/package/supatool';
+  const headerComment = version
+    ? `-- Generated by supatool v${version}, ${outputDate} | ${npmUrl}\n`
+    : `-- Generated by supatool, ${outputDate} | ${npmUrl}\n`;
+
+  const tables = definitions.filter(d => d.type === 'table');
+  const views = definitions.filter(d => d.type === 'view');
+  const rlsList = definitions.filter(d => d.type === 'rls');
+  const triggersList = definitions.filter(d => d.type === 'trigger');
+  const functions = definitions.filter(d => d.type === 'function');
+  const cronJobs = definitions.filter(d => d.type === 'cron');
+  const customTypes = definitions.filter(d => d.type === 'type');
+
+  // schema.table -> RLS DDL
+  const rlsByCategory = new Map<string, string>();
+  for (const r of rlsList) {
+    if (r.category) rlsByCategory.set(r.category, r.ddl);
+  }
+  // schema.table -> trigger DDL array
+  const triggersByCategory = new Map<string, string[]>();
+  for (const t of triggersList) {
+    if (!t.category) continue;
+    const list = triggersByCategory.get(t.category) ?? [];
+    list.push(t.ddl);
+    triggersByCategory.set(t.category, list);
+  }
+
+  // schema.table -> RLS status (for appending comment/DDL when no policies)
+  const rlsStatusByCategory = new Map<string, TableRlsStatus>();
+  for (const s of tableRlsStatus) {
+    rlsStatusByCategory.set(`${s.schema}.${s.table}`, s);
+  }
+
+  // Build merged DDL (table/view + RLS + triggers). Tables with RLS disabled or 0 policies get a comment block in the file.
+  const mergeRlsAndTriggers = (def: TableDefinition): string => {
+    const cat = def.schema && def.name ? `${def.schema}.${def.name}` : def.category ?? '';
+    let ddl = def.ddl.trimEnd();
+    const rlsDdl = rlsByCategory.get(cat);
+    if (rlsDdl) {
+      ddl += '\n\n' + rlsDdl.trim();
+    } else if (def.type === 'table' && def.schema && def.name) {
+      const rlsStatus = rlsStatusByCategory.get(cat);
+      if (rlsStatus) {
+        if (!rlsStatus.rlsEnabled) {
+          ddl += '\n\n-- RLS: disabled. Consider enabling for production.';
+          ddl += '\n-- ALTER TABLE ' + def.schema + '.' + def.name + ' ENABLE ROW LEVEL SECURITY;';
+        } else if (rlsStatus.policyCount === 0) {
+          ddl += '\n\n-- RLS: enabled, no policies defined';
+          ddl += '\nALTER TABLE ' + def.schema + '.' + def.name + ' ENABLE ROW LEVEL SECURITY;';
+        }
+      }
+    }
+    const trgList = triggersByCategory.get(cat);
+    if (trgList && trgList.length > 0) {
+      ddl += '\n\n' + trgList.map(t => t.trim()).join('\n\n');
+    }
+    return ddl.endsWith('\n') ? ddl : ddl + '\n';
+  };
+
+  const mergedTables: TableDefinition[] = tables.map(t => ({
+    ...t,
+    ddl: mergeRlsAndTriggers(t)
+  }));
+  const mergedViews: TableDefinition[] = views.map(v => ({
+    ...v,
+    ddl: mergeRlsAndTriggers(v)
+  }));
+
+  const toWrite: TableDefinition[] = [
+    ...mergedTables,
+    ...mergedViews,
+    ...functions,
+    ...cronJobs,
+    ...customTypes
+  ];
+
+  const multiSchema = schemas.length > 1;
+  const typeDirNames = {
+    table: 'tables',
+    view: 'views',
+    function: 'rpc',
+    cron: 'cron',
+    type: 'types'
+  } as const;
+
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // 各タイプのディレクトリマッピング
-  const typeDirectories = separateDirectories ? {
-    table: path.join(outputDir, 'tables'), // テーブルもtables/フォルダに
-    view: path.join(outputDir, 'views'),
-    rls: path.join(outputDir, 'rls'),
-    function: path.join(outputDir, 'rpc'),
-    trigger: path.join(outputDir, 'rpc'), // トリガーもrpcディレクトリに
-    cron: path.join(outputDir, 'cron'),
-    type: path.join(outputDir, 'types')
-  } : {
-    // --no-separate の場合は全てルートに
-    table: outputDir,
-    view: outputDir,
-    rls: outputDir,
-    function: outputDir,
-    trigger: outputDir,
-    cron: outputDir,
-    type: outputDir
-  };
+  const fsPromises = await import('fs/promises');
 
-  // 必要なディレクトリを事前作成
-  const requiredDirs = new Set(Object.values(typeDirectories));
-  for (const dir of requiredDirs) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+  for (const def of toWrite) {
+    const typeDir = typeDirNames[def.type as keyof typeof typeDirNames];
+    const baseTypeDir = separateDirectories ? typeDir : '.';
+    const targetDir = multiSchema && def.schema
+      ? path.join(outputDir, def.schema, baseTypeDir)
+      : path.join(outputDir, baseTypeDir);
+
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
     }
-  }
 
-  // 並行ファイル書き込み
-  const writePromises = definitions.map(async (def) => {
-    const targetDir = typeDirectories[def.type];
-
-    // ファイル名を決定（TypeとTriggerを区別しやすくする）
     let fileName: string;
     if (def.type === 'function') {
       fileName = `fn_${def.name}.sql`;
-    } else if (def.type === 'trigger') {
-      fileName = `trg_${def.name}.sql`;
     } else {
       fileName = `${def.name}.sql`;
     }
-    
     const filePath = path.join(targetDir, fileName);
-    // 最後に改行を追加
     const ddlWithNewline = def.ddl.endsWith('\n') ? def.ddl : def.ddl + '\n';
-    
-    // 非同期でファイル書き込み
-    const fsPromises = await import('fs/promises');
-    await fsPromises.writeFile(filePath, ddlWithNewline);
-  });
+    await fsPromises.writeFile(filePath, headerComment + ddlWithNewline);
+  }
 
-  // 全ファイル書き込みの完了を待機
-  await Promise.all(writePromises);
-
-  // インデックスファイルを生成
-  await generateIndexFile(definitions, outputDir, separateDirectories);
+  await generateIndexFile(toWrite, outputDir, separateDirectories, multiSchema, relations, rpcTables, allSchemas, schemas, version, tableRlsStatus);
 }
 
 /**
- * データベースオブジェクトのインデックスファイルを生成
- * AIが構造を理解しやすいように1行ずつリストアップ
+ * Generate index file for DB objects (RLS/triggers already merged into table/view)
  */
-async function generateIndexFile(definitions: TableDefinition[], outputDir: string, separateDirectories: boolean = true): Promise<void> {
+async function generateIndexFile(
+  definitions: TableDefinition[],
+  outputDir: string,
+  separateDirectories: boolean = true,
+  multiSchema: boolean = false,
+  relations: SchemaRelation[] = [],
+  rpcTables: RpcTableUsage[] = [],
+  allSchemas: string[] = [],
+  extractedSchemas: string[] = [],
+  version?: string,
+  tableRlsStatus: TableRlsStatus[] = []
+): Promise<void> {
   const fs = await import('fs');
   const path = await import('path');
 
-  // タイプ別にグループ化
-  const groupedDefs = {
-    table: definitions.filter(def => def.type === 'table'),
-    view: definitions.filter(def => def.type === 'view'),
-    rls: definitions.filter(def => def.type === 'rls'),
-    function: definitions.filter(def => def.type === 'function'),
-    trigger: definitions.filter(def => def.type === 'trigger'),
-    cron: definitions.filter(def => def.type === 'cron'),
-    type: definitions.filter(def => def.type === 'type')
+  const outputDate = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const npmUrl = 'https://www.npmjs.com/package/supatool';
+  const headerLine = version
+    ? `Generated by supatool v${version}, ${outputDate} | ${npmUrl}\n\n`
+    : `Generated by supatool, ${outputDate} | ${npmUrl}\n\n`;
+  const readmeHeader = version
+    ? `Generated by [supatool](${npmUrl}) v${version}, ${outputDate}\n\n`
+    : `Generated by [supatool](${npmUrl}), ${outputDate}\n\n`;
+
+  const typeDirNames: Record<string, string> = {
+    table: 'tables',
+    view: 'views',
+    function: 'rpc',
+    cron: 'cron',
+    type: 'types'
   };
 
-  const typeLabels = {
+  const typeLabels: Record<string, string> = {
     table: 'Tables',
-    view: 'Views', 
-    rls: 'RLS Policies',
+    view: 'Views',
     function: 'Functions',
-    trigger: 'Triggers',
     cron: 'Cron Jobs',
     type: 'Custom Types'
   };
 
-  // === 人間向け index.md ===
-  let indexContent = '# Database Schema Index\n\n';
-  
-  // 統計サマリー
-  indexContent += '## Summary\n\n';
-  Object.entries(groupedDefs).forEach(([type, defs]) => {
-    if (defs.length > 0) {
-      indexContent += `- ${typeLabels[type as keyof typeof typeLabels]}: ${defs.length} objects\n`;
-    }
-  });
-  indexContent += '\n';
+  const groupedDefs = {
+    table: definitions.filter(def => def.type === 'table'),
+    view: definitions.filter(def => def.type === 'view'),
+    function: definitions.filter(def => def.type === 'function'),
+    cron: definitions.filter(def => def.type === 'cron'),
+    type: definitions.filter(def => def.type === 'type')
+  };
 
-  // ファイル一覧（md形式）
-  Object.entries(groupedDefs).forEach(([type, defs]) => {
-    if (defs.length === 0) return;
-    
-    const label = typeLabels[type as keyof typeof typeLabels];
-    indexContent += `## ${label}\n\n`;
-    
-    defs.forEach(def => {
-      const folderPath = separateDirectories 
-        ? (type === 'trigger' ? 'rpc' : type === 'table' ? 'tables' : type)
-        : '.';
-      
-      // ファイル名を決定（Functions/Triggersに接頭辞を付ける）
-      let fileName: string;
-      if (def.type === 'function') {
-        fileName = `fn_${def.name}.sql`;
-      } else if (def.type === 'trigger') {
-        fileName = `trg_${def.name}.sql`;
-      } else {
-        fileName = `${def.name}.sql`;
-      }
-      
-      const filePath = separateDirectories ? `${folderPath}/${fileName}` : fileName;
-      const commentText = def.comment ? ` - ${def.comment}` : '';
-      indexContent += `- [${def.name}](${filePath})${commentText}\n`;
-    });
-    indexContent += '\n';
-  });
-
-  // ディレクトリ構造（フォルダのみ）
-  indexContent += '## Directory Structure\n\n';
-  indexContent += '```\n';
-  indexContent += 'schemas/\n';
-  indexContent += '├── index.md\n';
-  indexContent += '├── llms.txt\n';
-  
-  if (separateDirectories) {
-    Object.entries(groupedDefs).forEach(([type, defs]) => {
-      if (defs.length === 0) return;
-      const folderName = type === 'trigger' ? 'rpc' : type === 'table' ? 'tables' : type;
-      indexContent += `└── ${folderName}/\n`;
-    });
+  // schema.table -> RLS status (for Tables docs and warnings)
+  const rlsMap = new Map<string, TableRlsStatus>();
+  for (const s of tableRlsStatus) {
+    rlsMap.set(`${s.schema}.${s.table}`, s);
   }
-  indexContent += '```\n';
 
-  // === AI向け llms.txt ===
-  let llmsContent = 'Database Schema - Complete Objects Catalog\n\n';
-  
-  // Summary section
+  const formatRlsNote = (schema: string, name: string): string => {
+    const s = rlsMap.get(`${schema}.${name}`);
+    if (!s) return '';
+    if (!s.rlsEnabled) return ' **⚠️ RLS disabled**';
+    if (s.policyCount === 0) return ' (RLS: enabled, policies: 0)';
+    return ` (RLS: enabled, policies: ${s.policyCount})`;
+  };
+
+  // Build relative path per file (schema/type/file when multiSchema)
+  const getRelPath = (def: TableDefinition): string => {
+    const typeDir = separateDirectories ? (typeDirNames[def.type] ?? def.type) : '.';
+    const fileName = def.type === 'function' ? `fn_${def.name}.sql` : `${def.name}.sql`;
+    if (multiSchema && def.schema) {
+      return `${def.schema}/${typeDir}/${fileName}`;
+    }
+    return separateDirectories ? `${typeDir}/${fileName}` : fileName;
+  };
+
+  // === Human-readable README.md (description + link to llms.txt) ===
+  let readmeContent = readmeHeader;
+  readmeContent += '# Schema (extract output)\n\n';
+  readmeContent += 'This folder contains DDL exported by `supatool extract`.\n\n';
+  readmeContent += '- **tables/** – Table definitions (with RLS and triggers in the same file)\n';
+  readmeContent += '- **views/** – View definitions\n';
+  readmeContent += '- **rpc/** – Functions\n';
+  readmeContent += '- **cron/** – Cron jobs\n';
+  readmeContent += '- **types/** – Custom types\n\n';
+  if (multiSchema) {
+    readmeContent += 'When multiple schemas are extracted, each schema has its own subfolder (e.g. `public/tables/`, `agent/views/`).\n\n';
+  }
+  readmeContent += 'Full catalog and relations: [llms.txt](llms.txt)\n';
+  if (tableRlsStatus.some(s => !s.rlsEnabled)) {
+    readmeContent += '\n⚠️ Tables with RLS disabled: [rls_warnings.md](rls_warnings.md)\n';
+  }
+
+  // === llms.txt ===
+  let llmsContent = headerLine;
+  llmsContent += 'Database Schema - Complete Objects Catalog\n';
+  llmsContent += '(Tables/Views include RLS and Triggers in the same file)\n\n';
   llmsContent += 'SUMMARY\n';
   Object.entries(groupedDefs).forEach(([type, defs]) => {
-    if (defs.length > 0) {
-      llmsContent += `${typeLabels[type as keyof typeof typeLabels]}: ${defs.length}\n`;
+    if (defs.length > 0 && typeLabels[type]) {
+      llmsContent += `${typeLabels[type]}: ${defs.length}\n`;
     }
   });
-  llmsContent += '\n';
-
-  // Flat list for AI processing (single format)
-  llmsContent += 'OBJECTS\n';
+  llmsContent += '\nOBJECTS\n';
   definitions.forEach(def => {
-    const folderPath = separateDirectories 
-      ? (def.type === 'trigger' ? 'rpc' : def.type === 'table' ? 'tables' : def.type)
-      : '.';
-    
-    // ファイル名を決定（Functions/Triggersに接頭辞を付ける）
-    let fileName: string;
-    if (def.type === 'function') {
-      fileName = `fn_${def.name}.sql`;
-    } else if (def.type === 'trigger') {
-      fileName = `trg_${def.name}.sql`;
-    } else {
-      fileName = `${def.name}.sql`;
-    }
-    
-    const filePath = separateDirectories ? `${folderPath}/${fileName}` : fileName;
-    const commentText = def.comment ? `:${def.comment}` : '';
-    llmsContent += `${def.type}:${def.name}:${filePath}${commentText}\n`;
+    const filePath = getRelPath(def);
+    const commentSuffix = def.comment ? ` # ${def.comment}` : '';
+    const displayName = def.schema ? `${def.schema}.${def.name}` : def.name;
+    const rlsSuffix = def.type === 'table' && def.schema ? formatRlsNote(def.schema, def.name) : '';
+    llmsContent += `${def.type}:${displayName}:${filePath}${commentSuffix}${rlsSuffix}\n`;
   });
 
-  // ファイル保存
-  const indexPath = path.join(outputDir, 'index.md');
+  if (relations.length > 0) {
+    llmsContent += '\nRELATIONS\n';
+    relations.forEach(r => {
+      llmsContent += `${r.from} -> ${r.to}\n`;
+    });
+  }
+  if (rpcTables.length > 0) {
+    llmsContent += '\nRPC_TABLES\n';
+    rpcTables.forEach(rt => {
+      llmsContent += `${rt.rpc}: ${rt.tables.join(', ')}\n`;
+    });
+  }
+
+  if (allSchemas.length > 0) {
+    const extractedSet = new Set(extractedSchemas);
+    const extractedList = allSchemas.filter(s => extractedSet.has(s));
+    const notExtractedList = allSchemas.filter(s => !extractedSet.has(s));
+    llmsContent += '\nALL_SCHEMAS\n';
+    llmsContent += 'EXTRACTED\n';
+    extractedList.forEach(schemaName => {
+      llmsContent += `${schemaName}\n`;
+    });
+    llmsContent += '\nNOT_EXTRACTED\n';
+    notExtractedList.forEach(schemaName => {
+      llmsContent += `${schemaName}\n`;
+    });
+  }
+
+  const readmePath = path.join(outputDir, 'README.md');
   const llmsPath = path.join(outputDir, 'llms.txt');
-  
-  fs.writeFileSync(indexPath, indexContent);
+  fs.writeFileSync(readmePath, readmeContent);
   fs.writeFileSync(llmsPath, llmsContent);
+
+  // schema_index.json (same data for agents that parse JSON)
+  const schemaIndex = {
+    objects: definitions.map(def => {
+      const base: { type: string; name: string; path: string; comment?: string; rls?: string } = {
+        type: def.type,
+        name: def.schema ? `${def.schema}.${def.name}` : def.name,
+        path: getRelPath(def),
+        ...(def.comment && { comment: def.comment })
+      };
+      if (def.type === 'table' && def.schema) {
+        const s = rlsMap.get(`${def.schema}.${def.name}`);
+        if (s) {
+          base.rls = s.rlsEnabled ? (s.policyCount === 0 ? 'enabled_no_policies' : `enabled_${s.policyCount}_policies`) : 'disabled';
+        }
+      }
+      return base;
+    }),
+    relations: relations.map(r => ({ from: r.from, to: r.to })),
+    rpc_tables: rpcTables.map(rt => ({ rpc: rt.rpc, tables: rt.tables })),
+    all_schemas: allSchemas.length > 0
+      ? {
+          extracted: allSchemas.filter(s => extractedSchemas.includes(s)),
+          not_extracted: allSchemas.filter(s => !extractedSchemas.includes(s))
+        }
+      : undefined
+  };
+  fs.writeFileSync(path.join(outputDir, 'schema_index.json'), JSON.stringify(schemaIndex, null, 2), 'utf8');
+
+  // schema_summary.md (one-file overview for AI) — include RLS status per table
+  let summaryMd = '# Schema summary\n\n';
+  const tableDefs = definitions.filter(d => d.type === 'table' || d.type === 'view');
+  if (tableDefs.length > 0) {
+    summaryMd += '## Tables / Views\n';
+    tableDefs.forEach(d => {
+      const name = d.schema ? `${d.schema}.${d.name}` : d.name;
+      const rlsNote = d.type === 'table' && d.schema ? formatRlsNote(d.schema, d.name) : '';
+      summaryMd += d.comment ? `- ${name}${rlsNote} (# ${d.comment})\n` : `- ${name}${rlsNote}\n`;
+    });
+    summaryMd += '\n';
+  }
+  if (relations.length > 0) {
+    summaryMd += '## Relations\n';
+    relations.forEach(r => {
+      summaryMd += `- ${r.from} -> ${r.to}\n`;
+    });
+    summaryMd += '\n';
+  }
+  if (rpcTables.length > 0) {
+    summaryMd += '## RPC → Tables\n';
+    rpcTables.forEach(rt => {
+      summaryMd += `- ${rt.rpc}: ${rt.tables.join(', ')}\n`;
+    });
+    summaryMd += '\n';
+  }
+  if (allSchemas.length > 0) {
+    const extractedSet = new Set(extractedSchemas);
+    summaryMd += '## Schemas\n';
+    summaryMd += `- Extracted: ${allSchemas.filter(s => extractedSet.has(s)).join(', ') || '(none)'}\n`;
+    summaryMd += `- Not extracted: ${allSchemas.filter(s => !extractedSet.has(s)).join(', ') || '(none)'}\n`;
+  }
+  fs.writeFileSync(path.join(outputDir, 'schema_summary.md'), summaryMd, 'utf8');
+
+  // RLS disabled tables warning doc (tables only; RLS enabled with 0 policies is not warned)
+  const rlsNotEnabled = tableRlsStatus.filter(s => !s.rlsEnabled);
+  if (rlsNotEnabled.length > 0) {
+    let warnMd = '# Tables with RLS disabled (warning)\n\n';
+    warnMd += 'The following tables do not have Row Level Security enabled.\n';
+    warnMd += 'Enabling RLS is recommended for production security.\n\n';
+    warnMd += '| Schema | Table |\n|--------|-------|\n';
+    rlsNotEnabled.forEach(s => {
+      warnMd += `| ${s.schema} | ${s.table} |\n`;
+    });
+    fs.writeFileSync(path.join(outputDir, 'rls_warnings.md'), warnMd, 'utf8');
+  }
 }
 
 /**
- * 定義を分類して出力
+ * Classify and output definitions
  */
 export async function extractDefinitions(options: DefinitionExtractOptions): Promise<void> {
   const { 
@@ -1232,45 +1518,46 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     all = false,
     tablePattern = '*',
     force = false,
-    schemas = ['public']
+    schemas = ['public'],
+    version
   } = options;
 
-  // Node.jsのSSL証明書検証を無効化
+  // Disable Node.js SSL certificate verification
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-  // 接続文字列の検証
+  // Connection string validation
   if (!connectionString) {
-    throw new Error('接続文字列が設定されていません。以下のいずれかで設定してください:\n' +
-      '1. --connection オプション\n' +
-      '2. SUPABASE_CONNECTION_STRING 環境変数\n' +
-      '3. DATABASE_URL 環境変数\n' +
-      '4. supatool.config.json 設定ファイル');
+    throw new Error('Connection string is not configured. Please set it using one of:\n' +
+      '1. --connection option\n' +
+      '2. SUPABASE_CONNECTION_STRING environment variable\n' +
+      '3. DATABASE_URL environment variable\n' +
+      '4. supatool.config.json configuration file');
   }
 
-  // 接続文字列の形式検証
+  // Connection string format validation
   if (!connectionString.startsWith('postgresql://') && !connectionString.startsWith('postgres://')) {
-    throw new Error(`不正な接続文字列形式です: ${connectionString}\n` +
-      '正しい形式: postgresql://username:password@host:port/database');
+    throw new Error(`Invalid connection string format: ${connectionString}\n` +
+      'Correct format: postgresql://username:password@host:port/database');
   }
 
-  // パスワード部分をURLエンコード
+  // URL encode password part
   let encodedConnectionString = connectionString;
-  console.log('🔍 元の接続文字列:', connectionString);
+  console.log('🔍 Original connection string:', connectionString);
   
   try {
-    // パスワードに@が含まれる場合の特別処理
+    // Special handling when password contains @
     if (connectionString.includes('@') && connectionString.split('@').length > 2) {
-      console.log('⚠️ パスワードに@が含まれているため特別処理を実行');
-      // 最後の@を区切り文字として使用
+      console.log('⚠️ Password contains @, executing special handling');
+      // Use last @ as delimiter
       const parts = connectionString.split('@');
-      const lastPart = parts.pop(); // 最後の部分（host:port/database）
-      const firstParts = parts.join('@'); // 最初の部分（postgresql://user:password）
+      const lastPart = parts.pop(); // Last part (host:port/database)
+      const firstParts = parts.join('@'); // First part (postgresql://user:password)
       
-      console.log('   分割結果:');
-      console.log('   前半部分:', firstParts);
-      console.log('   後半部分:', lastPart);
+      console.log('   Split result:');
+      console.log('   First part:', firstParts);
+      console.log('   Last part:', lastPart);
       
-      // パスワード部分をエンコード
+      // Encode password part
       const colonIndex = firstParts.lastIndexOf(':');
       if (colonIndex > 0) {
         const protocolAndUser = firstParts.substring(0, colonIndex);
@@ -1278,58 +1565,58 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
         const encodedPassword = encodeURIComponent(password);
         encodedConnectionString = `${protocolAndUser}:${encodedPassword}@${lastPart}`;
         
-        console.log('   エンコード結果:');
-        console.log('   プロトコル+ユーザー:', protocolAndUser);
-        console.log('   元パスワード:', password);
-        console.log('   エンコードパスワード:', encodedPassword);
-        console.log('   最終接続文字列:', encodedConnectionString);
+        console.log('   Encode result:');
+        console.log('   Protocol+User:', protocolAndUser);
+        console.log('   Original password:', password);
+        console.log('   Encoded password:', encodedPassword);
+        console.log('   Final connection string:', encodedConnectionString);
       }
     } else {
-      console.log('✅ 通常のURL解析を実行');
-      // 通常のURL解析
+      console.log('✅ Executing normal URL parsing');
+      // Normal URL parsing
       const url = new URL(connectionString);
       
-      // ユーザー名にドットが含まれる場合の処理
+      // Handle username containing dots
       if (url.username && url.username.includes('.')) {
-        console.log(`ユーザー名（ドット含む）: ${url.username}`);
+        console.log(`Username (with dots): ${url.username}`);
       }
       
       if (url.password) {
-        // パスワード部分のみをエンコード
+        // Encode only password part
         const encodedPassword = encodeURIComponent(url.password);
         url.password = encodedPassword;
         encodedConnectionString = url.toString();
-        console.log('   パスワードエンコード:', encodedPassword);
+        console.log('   Password encoded:', encodedPassword);
       }
     }
     
-    // Supabase接続用にSSL設定を追加
+    // Add SSL settings for Supabase connection
     if (!encodedConnectionString.includes('sslmode=')) {
       const separator = encodedConnectionString.includes('?') ? '&' : '?';
       encodedConnectionString += `${separator}sslmode=require`;
-      console.log('   SSL設定を追加:', encodedConnectionString);
+      console.log('   SSL setting added:', encodedConnectionString);
     }
     
-    // デバッグ情報を表示（パスワードは隠す）
+    // Display debug info (password hidden)
     const debugUrl = new URL(encodedConnectionString);
     const maskedPassword = debugUrl.password ? '*'.repeat(debugUrl.password.length) : '';
     debugUrl.password = maskedPassword;
-    console.log('🔍 接続情報:');
-    console.log(`   ホスト: ${debugUrl.hostname}`);
-    console.log(`   ポート: ${debugUrl.port}`);
-    console.log(`   データベース: ${debugUrl.pathname.slice(1)}`);
-    console.log(`   ユーザー: ${debugUrl.username}`);
+    console.log('🔍 Connection info:');
+    console.log(`   Host: ${debugUrl.hostname}`);
+    console.log(`   Port: ${debugUrl.port}`);
+    console.log(`   Database: ${debugUrl.pathname.slice(1)}`);
+    console.log(`   User: ${debugUrl.username}`);
     console.log(`   SSL: ${debugUrl.searchParams.get('sslmode') || 'require'}`);
   } catch (error) {
-    // URL解析に失敗した場合は元の文字列を使用
-    console.warn('接続文字列のURL解析に失敗しました。特殊文字が含まれている可能性があります。');
-    console.warn('エラー詳細:', error instanceof Error ? error.message : String(error));
+    // Use original string if URL parsing fails
+    console.warn('Failed to parse connection string URL. May contain special characters.');
+    console.warn('Error details:', error instanceof Error ? error.message : String(error));
   }
 
   const fs = await import('fs');
   const readline = await import('readline');
 
-  // 上書き確認
+  // Overwrite confirmation
   if (!force && fs.existsSync(outputDir)) {
     const files = fs.readdirSync(outputDir);
     if (files.length > 0) {
@@ -1350,7 +1637,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     }
   }
 
-  // スピナーを動的インポート
+  // Dynamic import for spinner
   const { default: ora } = await import('ora');
   const spinner = ora('Connecting to database...').start();
 
@@ -1363,17 +1650,17 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
   });
   
   try {
-    // 接続前のデバッグ情報
-    console.log('🔧 接続設定:');
+    // Debug before connect
+    console.log('🔧 Connection settings:');
     console.log(`   SSL: rejectUnauthorized=false`);
-    console.log(`   接続文字列長: ${encodedConnectionString.length}`);
+    console.log(`   Connection string length: ${encodedConnectionString.length}`);
     
     await client.connect();
     spinner.text = 'Connected to database';
 
     let allDefinitions: TableDefinition[] = [];
 
-    // 進行状況トラッカーを初期化
+    // Initialize progress tracker
     const progress: ProgressTracker = {
       tables: { current: 0, total: 0 },
       views: { current: 0, total: 0 },
@@ -1385,16 +1672,16 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     };
 
     if (all) {
-      // 事前に各オブジェクトの総数を取得
+      // Get total count for each object type first
       spinner.text = 'Counting database objects...';
       
-      // テーブル・ビューの総数を取得
+      // Get total tables/views count
       const tablesCountResult = await client.query('SELECT COUNT(*) as count FROM pg_tables WHERE schemaname = \'public\'');
       const viewsCountResult = await client.query('SELECT COUNT(*) as count FROM pg_views WHERE schemaname = \'public\'');
       progress.tables.total = parseInt(tablesCountResult.rows[0].count);
       progress.views.total = parseInt(viewsCountResult.rows[0].count);
       
-      // RLS ポリシーの総数を取得（テーブル単位）
+      // Get total RLS policy count (per table)
       try {
         const rlsCountResult = await client.query(`
           SELECT COUNT(DISTINCT tablename) as count 
@@ -1406,7 +1693,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
         progress.rls.total = 0;
       }
       
-      // 関数の総数を取得
+      // Get total functions count
       const functionsCountResult = await client.query(`
         SELECT COUNT(*) as count 
         FROM pg_proc p
@@ -1415,7 +1702,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       `);
       progress.functions.total = parseInt(functionsCountResult.rows[0].count);
       
-      // トリガーの総数を取得
+      // Get total triggers count
       const triggersCountResult = await client.query(`
         SELECT COUNT(*) as count 
         FROM pg_trigger t
@@ -1425,7 +1712,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       `);
       progress.triggers.total = parseInt(triggersCountResult.rows[0].count);
       
-      // Cronジョブの総数を取得
+      // Get total Cron jobs count
       try {
         const cronCountResult = await client.query('SELECT COUNT(*) as count FROM cron.job');
         progress.cronJobs.total = parseInt(cronCountResult.rows[0].count);
@@ -1433,7 +1720,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
         progress.cronJobs.total = 0;
       }
       
-      // カスタム型の総数を取得
+      // Get total custom types count
       const typesCountResult = await client.query(`
         SELECT COUNT(*) as count 
         FROM pg_type t
@@ -1451,7 +1738,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       `);
       progress.customTypes.total = parseInt(typesCountResult.rows[0].count);
 
-      // --all フラグが指定された場合は全てのオブジェクトを取得（順次処理）
+      // When --all: fetch all objects (sequential)
       const tables = await fetchTableDefinitions(client, spinner, progress, schemas);
       const rlsPolicies = await fetchRlsPolicies(client, spinner, progress, schemas);
       const functions = await fetchFunctions(client, spinner, progress, schemas);
@@ -1468,8 +1755,8 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
         ...customTypes
       ];
     } else {
-      // 従来の処理（テーブル・ビューのみ）
-      // テーブル・ビューの総数を取得
+      // Legacy path (tables/views only)
+      // Get total tables/views count
       const tablesCountResult = await client.query('SELECT COUNT(*) as count FROM pg_tables WHERE schemaname = \'public\'');
       const viewsCountResult = await client.query('SELECT COUNT(*) as count FROM pg_views WHERE schemaname = \'public\'');
       progress.tables.total = parseInt(tablesCountResult.rows[0].count);
@@ -1486,17 +1773,67 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       }
     }
     
-    // パターンマッチング
+    // Pattern matching
     if (tablePattern !== '*') {
       const regex = new RegExp(tablePattern.replace(/\*/g, '.*'));
       allDefinitions = allDefinitions.filter(def => regex.test(def.name));
     }
 
-    // 定義を保存
-    spinner.text = 'Saving definitions to files...';
-    await saveDefinitionsByType(allDefinitions, outputDir, separateDirectories);
+    // Fetch for RELATIONS / RPC_TABLES (llms.txt upgrade)
+    let relations: SchemaRelation[] = [];
+    let rpcTables: RpcTableUsage[] = [];
+    let allSchemas: string[] = [];
+    try {
+      allSchemas = await fetchAllSchemas(client);
+      relations = await fetchRelationList(client, schemas);
+      const funcDefs = allDefinitions.filter(d => d.type === 'function');
+      for (const f of funcDefs) {
+        const tables = extractTableRefsFromFunctionDdl(f.ddl, f.schema ?? 'public');
+        if (tables.length > 0) {
+          rpcTables.push({
+            rpc: f.schema ? `${f.schema}.${f.name}` : f.name,
+            tables
+          });
+        }
+      }
+    } catch (err) {
+      if (process.env.SUPATOOL_DEBUG) {
+        console.warn('RELATIONS/RPC_TABLES extraction skipped:', err);
+      }
+    }
 
-    // 統計を表示
+    // RLS status (for Tables docs, rls_warnings.md, and extract-time warning)
+    let tableRlsStatus: TableRlsStatus[] = [];
+    try {
+      const tableDefs = allDefinitions.filter(d => d.type === 'table');
+      if (tableDefs.length > 0) {
+        tableRlsStatus = await fetchTableRlsStatus(client, schemas);
+      }
+    } catch (err) {
+      if (process.env.SUPATOOL_DEBUG) {
+        console.warn('RLS status fetch skipped:', err);
+      }
+    }
+
+    // When force: remove output dir then write (so removed tables don't leave files)
+    if (force && fs.existsSync(outputDir)) {
+      fs.rmSync(outputDir, { recursive: true });
+    }
+
+    // Save definitions (table+RLS+triggers merged, schema folders)
+    spinner.text = 'Saving definitions to files...';
+    await saveDefinitionsByType(allDefinitions, outputDir, separateDirectories, schemas, relations, rpcTables, allSchemas, version, tableRlsStatus);
+
+    // Warn at extract time when any table has RLS disabled
+    const rlsNotEnabled = tableRlsStatus.filter(s => !s.rlsEnabled);
+    if (rlsNotEnabled.length > 0) {
+      console.warn('');
+      console.warn('⚠️  Tables with RLS disabled: ' + rlsNotEnabled.map(s => `${s.schema}.${s.table}`).join(', '));
+      console.warn('   Details: ' + outputDir + '/rls_warnings.md');
+      console.warn('');
+    }
+
+    // Show stats
     const counts = {
       table: allDefinitions.filter(def => def.type === 'table').length,
       view: allDefinitions.filter(def => def.type === 'view').length,
@@ -1507,7 +1844,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       type: allDefinitions.filter(def => def.type === 'type').length
     };
 
-    // 進捗表示を停止
+    // Stop progress display
     stopProgressDisplay();
     
     spinner.succeed(`Extraction completed: ${outputDir}`);
@@ -1521,7 +1858,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     console.log('');
 
   } catch (error) {
-    // 進捗表示を停止（エラー時）
+    // Stop progress display (on error)
     stopProgressDisplay();
     spinner.fail('Extraction failed');
     console.error('Error:', error);
@@ -1530,7 +1867,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     try {
       await client.end();
     } catch (closeError) {
-      // データベース接続の終了エラーは無視（既に切断されている場合など）
+      // Ignore DB connection close errors (e.g. already disconnected)
     }
   }
 }

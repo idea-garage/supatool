@@ -16,8 +16,8 @@ import { syncAllTables, resolveConfig, createConfigTemplate } from '../sync';
 import { extractDefinitions } from '../sync/definitionExtractor';
 import { generateSeedsFromRemote } from '../sync/seedGenerator';
 
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const program = new Command();
 
@@ -42,7 +42,7 @@ program
   .option('--schema <schemas>', 'Target schemas, comma-separated (default: public)')
   .option('--config <path>', 'Configuration file path')
   .option('-f, --force', 'Force overwrite without confirmation')
-  .action(async (options) => {
+  .action(async (options: any) => {
     const config = resolveConfig({
       connectionString: options.connection
     }, options.config);
@@ -57,8 +57,8 @@ program
     }
     
     try {
-      // --schema オプションの処理
-      let schemas = ['public']; // デフォルト
+      // Handle --schema option
+      let schemas = ['public']; // default
       if (options.schema) {
         schemas = options.schema.split(',').map((s: string) => s.trim());
       }
@@ -72,7 +72,8 @@ program
         all: options.all,
         tablePattern: options.tables,
         force: options.force,
-        schemas: schemas
+        schemas: schemas,
+        version
       });
     } catch (error) {
       console.error('⚠️ Extraction error:', error);
@@ -80,128 +81,130 @@ program
     }
   });
 
-// config:init サブコマンド
+// config:init subcommand
 program
   .command('config:init')
-  .description('設定ファイル雛形を生成')
-  .option('-o, --out <path>', '出力先パス', 'supatool.config.json')
-  .action((options) => {
+  .description('Generate config file template')
+  .option('-o, --out <path>', 'Output path', 'supatool.config.json')
+  .action((options: any) => {
     createConfigTemplate(options.out);
   });
 
-// gen:types サブコマンド
+// gen:types subcommand
 program
   .command('gen:types <modelPath>')
-  .description('モデルYAMLからTypeScript型定義を生成')
-  .option('-o, --out <path>', '出力先パス', 'docs/generated/types.ts')
-  .action((modelPath, options) => {
+  .description('Generate TypeScript types from model YAML')
+  .option('-o, --out <path>', 'Output path', 'docs/generated/types.ts')
+  .action((modelPath: string, options: any) => {
     const model = parseModelYaml(modelPath);
     generateTypesFromModel(model, options.out);
-    console.log('TypeScript型定義を出力:', options.out);
+    console.log('TypeScript types output:', options.out);
   });
 
-// gen:crud サブコマンド
+// gen:crud subcommand
 program
   .command('gen:crud <modelPath>')
-  .description('Generate CRUD TypeScript code from model YAML')
-  .option('-o, --out <dir>', '出力先ディレクトリ', 'docs/generated/crud')
-  .action((modelPath, options) => {
+  .description('Generate CRUD TypeScript code from model YAML [deprecated - prefer writing code with LLM]')
+  .option('-o, --out <dir>', 'Output directory', 'docs/generated/crud')
+  .action((modelPath: string, options: any) => {
+    console.warn('⚠️  gen:crud is deprecated. With LLM development, writing code as needed is often more efficient.');
     const model = parseModelYaml(modelPath);
     generateCrudFromModel(model, options.out);
           console.log('Generated CRUD TypeScript code:', options.out);
   });
 
-// gen:docs サブコマンド
+// gen:docs subcommand
 program
   .command('gen:docs <modelPath>')
-  .description('モデルYAMLからドキュメント(Markdown)を生成')
-  .option('-o, --out <path>', 'テーブル定義書出力先', 'docs/generated/table-doc.md')
-  .action((modelPath, options) => {
+  .description('Generate documentation (Markdown) from model YAML')
+  .option('-o, --out <path>', 'Table doc output path', 'docs/generated/table-doc.md')
+  .action((modelPath: string, options: any) => {
     const model = parseModelYaml(modelPath);
     generateTableDocMarkdown(model, options.out);
     generateRelationsMarkdown(model, 'docs/generated/relations.md');
-    console.log('テーブル定義書を出力:', options.out);
-    console.log('リレーション一覧を出力: docs/generated/relations.md');
+    console.log('Table doc output:', options.out);
+    console.log('Relations list output: docs/generated/relations.md');
   });
 
-// gen:sql サブコマンド
+// gen:sql subcommand
 program
   .command('gen:sql <modelPath>')
-  .description('モデルYAMLからテーブル・リレーション・RLS/セキュリティSQLを一括生成')
-  .option('-o, --out <path>', '出力先パス', 'docs/generated/schema.sql')
-  .action((modelPath, options) => {
+  .description('Generate table, relation, RLS/security SQL from model YAML')
+  .option('-o, --out <path>', 'Output path', 'docs/generated/schema.sql')
+  .action((modelPath: string, options: any) => {
     const model = parseModelYaml(modelPath);
-    // 一時ファイルに個別出力
+    // Write to temp files first
     const tmpSchema = 'docs/generated/.tmp_schema.sql';
     const tmpRls = 'docs/generated/.tmp_rls.sql';
     generateSqlFromModel(model, tmpSchema);
     generateRlsSqlFromModel(model, tmpRls);
-    // 結合して1ファイルにまとめる
+    // Merge into single file
     const schema = fs.readFileSync(tmpSchema, 'utf-8');
     const rls = fs.readFileSync(tmpRls, 'utf-8');
     fs.writeFileSync(options.out, schema + '\n' + rls);
     fs.unlinkSync(tmpSchema);
     fs.unlinkSync(tmpRls);
-    console.log('テーブル・リレーション・RLS/セキュリティSQLを一括出力:', options.out);
+    console.log('Table, relation, RLS/security SQL output:', options.out);
   });
 
-// gen:rls サブコマンド
+// gen:rls subcommand
 program
   .command('gen:rls <modelPath>')
-  .description('モデルYAMLからRLS/セキュリティポリシーSQLを生成')
-  .option('-o, --out <path>', '出力先パス', 'docs/generated/rls.sql')
-  .action((modelPath, options) => {
+  .description('Generate RLS/security policy SQL from model YAML')
+  .option('-o, --out <path>', 'Output path', 'docs/generated/rls.sql')
+  .action((modelPath: string, options: any) => {
     const model = parseModelYaml(modelPath);
     generateRlsSqlFromModel(model, options.out);
-    console.log('RLS/セキュリティポリシーSQLを出力:', options.out);
+    console.log('RLS/security policy SQL output:', options.out);
   });
 
-// gen:all サブコマンド
+// gen:all subcommand
 program
   .command('gen:all <modelPath>')
-  .description('モデルYAMLから全て一括生成')
+  .description('Generate all from model YAML')
   .action((modelPath) => {
     const model = parseModelYaml(modelPath);
     generateTypesFromModel(model, 'docs/generated/types.ts');
     generateCrudFromModel(model, 'docs/generated/crud');
     generateTableDocMarkdown(model, 'docs/generated/table-doc.md');
     generateRelationsMarkdown(model, 'docs/generated/relations.md');
-    console.log('TypeScript型定義を出力: docs/generated/types.ts');
-    console.log('CRUD関数TypeScriptコードを出力: docs/generated/crud/');
-    console.log('テーブル定義書を出力: docs/generated/table-doc.md');
-    console.log('リレーション一覧を出力: docs/generated/relations.md');
+    console.log('TypeScript types output: docs/generated/types.ts');
+    console.log('CRUD code output: docs/generated/crud/');
+    console.log('Table doc output: docs/generated/table-doc.md');
+    console.log('Relations list output: docs/generated/relations.md');
   });
 
-// create サブコマンド
+// create subcommand
 program
   .command('create <template>')
-  .description('テンプレートYAML雛形を生成')
-  .option('-o, --out <path>', '出力先パス', 'docs/model-schema-example.yaml')
-  .action((template, options) => {
+  .description('Generate template YAML')
+  .option('-o, --out <path>', 'Output path', 'docs/model-schema-example.yaml')
+  .action((template: string, options: any) => {
     const srcPath = path.join(__dirname, '../templates/yaml', `${template}.yaml`);
     const destPath = options.out;
     if (!fs.existsSync(srcPath)) {
-      console.error(`テンプレートが見つかりません: ${srcPath}`);
+      console.error(`Template not found: ${srcPath}`);
       process.exit(1);
     }
     fs.copyFileSync(srcPath, destPath);
-    console.log(`テンプレート雛形を生成: ${destPath}`);
+    console.log(`Template generated: ${destPath}`);
   });
 
-// crud コマンド（Supabase型定義→CRUD生成）
+// crud command (Supabase types -> CRUD generation)
 program
   .command('crud')
-  .description('Supabase型定義(TypeScript)からCRUD関数TypeScriptコードを生成')
-  .option('-i, --input <path>', '型定義の入力パス', 'shared/')
-  .option('-o, --output <path>', 'CRUDコード出力先', 'src/integrations/supabase/')
-  .option('-t, --tables <names>', '生成対象テーブル（カンマ区切り）')
-  .option('-f, --force', '出力先を強制上書き')
-  .action((options) => {
-    // コマンドライン引数をmain()に渡すため、process.argvをそのまま利用
+  .description('Generate CRUD from Supabase type definitions [deprecated - prefer writing code with LLM]')
+  .option('-i, --input <path>', 'Type definition input path', 'shared/')
+  .option('-o, --output <path>', 'CRUD code output path', 'src/integrations/supabase/')
+  .option('-t, --tables <names>', 'Target tables (comma-separated)')
+  .option('-f, --force', 'Force overwrite output')
+  .action((options: any) => {
+    console.warn('⚠️  crud is deprecated. With LLM development, writing code as needed is often more efficient.');
+    // Pass argv to main() for CLI args
     main();
   });
 
-// helpサブコマンド
+// help subcommand
 program
   .command('help')
   .description('Show help')
@@ -209,16 +212,22 @@ program
     console.log(helpText);
   });
 
-// sync コマンド
+// sync command (deprecated)
 program
   .command('sync')
-  .description('ローカルスキーマとリモートスキーマを同期')
+  .description('Synchronize local and remote schemas [deprecated]')
   .option('-c, --connection <string>', 'Supabase connection string')
-  .option('-s, --schema-dir <path>', 'ローカルスキーマディレクトリ', './supabase/schemas')
-  .option('-t, --tables <pattern>', 'テーブルパターン（ワイルドカード対応）', '*')
-  .option('-f, --force', '強制上書き（確認なし）')
-  .option('--config <path>', '設定ファイルパス')
-  .action(async (options) => {
+  .option('-s, --schema-dir <path>', 'Local schema directory', './supabase/schemas')
+  .option('-t, --tables <pattern>', 'Table pattern (wildcards supported)', '*')
+  .option('-f, --force', 'Force overwrite (no confirmation)')
+  .option('--config <path>', 'Configuration file path')
+  .action(async (options: any) => {
+    console.warn('⚠️  WARNING: sync command is deprecated.');
+    console.warn('   Please use `supatool deploy` command instead.');
+    console.warn('   Example: supatool deploy --table users --dry-run');
+    console.warn('   Example: supatool deploy --table all --dry-run  # all tables');
+    console.warn('');
+    
     const config = resolveConfig({
       connectionString: options.connection
     }, options.config);
@@ -245,16 +254,91 @@ program
     }
   });
 
-// seed コマンド
+// deploy command (recommended)
+program
+  .command('deploy')
+  .description('Deploy local schema to remote (diff detection, migration generation, confirm before apply)')
+  .option('-c, --connection <string>', 'Supabase connection string')
+  .option('-s, --schema-dir <path>', 'Local schema directory', './supabase/schemas')
+  .option('-t, --table <name>', 'Target table name (specify "all" for all tables)')
+  .option('--auto-apply', 'Auto-apply to remote (no confirmation)')
+  .option('--dry-run', 'Preview changes only (recommended)')
+  .option('--generate-only', 'Generate migration files only (no apply)')
+  .option('--config <path>', 'Configuration file path')
+  .action(async (options: any) => {
+    const config = resolveConfig({
+      connectionString: options.connection
+    }, options.config);
+    
+    if (!config.connectionString) {
+      console.error('Connection string is required. Set it using one of:');
+      console.error('1. --connection option');
+      console.error('2. SUPABASE_CONNECTION_STRING environment variable');
+      console.error('3. DATABASE_URL environment variable');
+      console.error('4. supatool.config.json configuration file');
+      process.exit(1);
+    }
+    
+    // Validate table specification
+    if (!options.table) {
+      console.error('❌ Table name is required. Use --table <table-name>');
+      console.error('   Example: supatool deploy --table users --dry-run');
+      console.error('   Example: supatool deploy --table all --dry-run  # all tables');
+      process.exit(1);
+    }
+    
+    const tablePattern = options.table === 'all' ? '*' : options.table;
+    
+    // Option processing
+    const isDryRun = options.dryRun || false;
+    const isAutoApply = options.autoApply || false;
+    const isGenerateOnly = options.generateOnly || false;
+    
+    // Conflict check
+    const activeOptions = [isDryRun, isAutoApply, isGenerateOnly].filter(Boolean).length;
+    if (activeOptions > 1) {
+      console.error('❌ --dry-run, --auto-apply, --generate-only cannot be specified simultaneously');
+      process.exit(1);
+    }
+    
+    if (isDryRun) {
+      console.log('🔍 Preview mode: showing changes');
+    } else if (isAutoApply) {
+      console.log('⚡ Auto-apply mode: executing without confirmation');
+    } else if (isGenerateOnly) {
+      console.log('📝 Migration generation mode: file generation only');
+    } else {
+      console.log('✅ Confirmation mode: generating migration then confirming before execution');
+    }
+
+    try {
+      console.log(`Target tables: ${tablePattern}`);
+      
+      await syncAllTables({
+        connectionString: config.connectionString,
+        schemaDir: options.schemaDir,
+        tablePattern: tablePattern,
+        force: isAutoApply,
+        dryRun: isDryRun,
+        generateOnly: isGenerateOnly,
+        requireConfirmation: !isDryRun && !isAutoApply && !isGenerateOnly
+      });
+    } catch (error) {
+      console.error('⚠️ Deploy error:', error);
+      process.exit(1);
+    }
+  });
+
+// seed command
 program
   .command('seed')
-  .description('指定テーブルのデータをリモートDBから取得し、AI用シードJSONを生成')
-  .option('-c, --connection <string>', 'Supabase接続文字列')
-  .option('-t, --tables <path>', '取得テーブル一覧YAML', 'tables.yaml')
-  .option('-o, --out <dir>', '出力ディレクトリ', 'supabase/seeds')
-  .option('--config <path>', '設定ファイルパス')
-  .action(async (options) => {
-    // 接続情報の解決
+  .description('Fetch table data from remote DB and generate AI seed JSON')
+  .option('-c, --connection <string>', 'Supabase connection string')
+  .option('-t, --tables <path>', 'Tables list YAML', 'tables.yaml')
+  .option('-o, --out <dir>', 'Output directory', 'supabase/seeds')
+  .option('--config <path>', 'Configuration file path')
+  .action(async (options: any) => {
+    // Resolve connection
     const config = resolveConfig({
       connectionString: options.connection
     }, options.config);
@@ -273,7 +357,7 @@ program
         outputDir: options.out
       });
     } catch (error) {
-      console.error('⚠️ Seed取得エラー:', error);
+      console.error('⚠️ Seed fetch error:', error);
       process.exit(1);
     }
   });

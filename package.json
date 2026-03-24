@@ -1,6 +1,6 @@
 {
   "name": "supatool",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "CLI for Supabase: extract schema (tables, views, RLS, RPC) to files + llms.txt for LLM, deploy local schema, seed export. CRUD code gen deprecated.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

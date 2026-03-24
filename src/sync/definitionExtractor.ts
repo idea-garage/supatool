@@ -412,7 +412,27 @@ async function fetchFunctions(client: Client, spinner?: any, progress?: Progress
       timestamp: Math.floor(Date.now() / 1000)
     });
   }
-  
+
+  // Detect overloaded functions (same schema.name, different signatures)
+  const nameCount = new Map<string, string[]>();
+  for (const row of result.rows) {
+    const key = `${row.schema_name}.${row.name}`;
+    const sig = `${row.name}(${row.identity_args || ''})`;
+    if (!nameCount.has(key)) nameCount.set(key, []);
+    nameCount.get(key)!.push(sig);
+  }
+  const overloads = [...nameCount.entries()].filter(([, sigs]) => sigs.length > 1);
+  if (overloads.length > 0) {
+    console.warn('\n⚠ Overloaded RPC functions detected (same name, different signatures):');
+    for (const [key, sigs] of overloads) {
+      console.warn(`  ${key}`);
+      for (const sig of sigs) {
+        console.warn(`    - ${sig}`);
+      }
+    }
+    console.warn('  Note: Only the last definition will be written to the output file.\n');
+  }
+
   return functions;
 }
 
@@ -965,19 +985,21 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
   ] = await Promise.all([
     // Get column info
     client.query(`
-      SELECT 
+      SELECT
         c.column_name,
         c.data_type,
         c.udt_name,
         c.character_maximum_length,
         c.is_nullable,
         c.column_default,
+        c.is_generated,
+        c.generation_expression,
         pg_catalog.format_type(a.atttypid, a.atttypmod) AS full_type
       FROM information_schema.columns c
       JOIN pg_class cl ON cl.relname = c.table_name
       JOIN pg_namespace ns ON ns.nspname = c.table_schema AND ns.oid = cl.relnamespace
       JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attname = c.column_name
-      WHERE c.table_schema = $1 
+      WHERE c.table_schema = $1
         AND c.table_name = $2
       ORDER BY c.ordinal_position
     `, [schemaName, tableName]),
@@ -1083,14 +1105,18 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       colDef += `(${col.character_maximum_length})`;
     }
     
-    // NOT NULL constraint
-    if (col.is_nullable === 'NO') {
-      colDef += ' NOT NULL';
-    }
-    
-    // Default value
-    if (col.column_default) {
-      colDef += ` DEFAULT ${col.column_default}`;
+    // Generated column
+    if (col.is_generated === 'ALWAYS') {
+      colDef += ` GENERATED ALWAYS AS (${col.generation_expression}) STORED`;
+    } else {
+      // NOT NULL constraint
+      if (col.is_nullable === 'NO') {
+        colDef += ' NOT NULL';
+      }
+      // Default value
+      if (col.column_default) {
+        colDef += ` DEFAULT ${col.column_default}`;
+      }
     }
     
     columnDefs.push(colDef);
@@ -1271,12 +1297,7 @@ async function saveDefinitionsByType(
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    let fileName: string;
-    if (def.type === 'function') {
-      fileName = `fn_${def.name}.sql`;
-    } else {
-      fileName = `${def.name}.sql`;
-    }
+    const fileName = `${def.name}.sql`;
     const filePath = path.join(targetDir, fileName);
     const ddlWithNewline = def.ddl.endsWith('\n') ? def.ddl : def.ddl + '\n';
     await fsPromises.writeFile(filePath, headerComment + ddlWithNewline);
@@ -1353,7 +1374,7 @@ async function generateIndexFile(
   // Build relative path per file (schema/type/file when multiSchema)
   const getRelPath = (def: TableDefinition): string => {
     const typeDir = separateDirectories ? (typeDirNames[def.type] ?? def.type) : '.';
-    const fileName = def.type === 'function' ? `fn_${def.name}.sql` : `${def.name}.sql`;
+    const fileName = `${def.name}.sql`;
     if (multiSchema && def.schema) {
       return `${def.schema}/${typeDir}/${fileName}`;
     }

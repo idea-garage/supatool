@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.4.2
+## v0.4.3
 ### Changed
 - **seed**: `tables.yaml` format changed to schema-grouped (no `tables:` wrapper key)
   ```yaml
@@ -18,6 +18,12 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **seed**: Explicit error when old `tables:` key format is detected, with migration example
 - **seed**: Explicit error when dot notation (`admin.table`) is used inside a schema group
+- **extract**: Generated columns now output as `GENERATED ALWAYS AS (expr) STORED` in DDL instead of appearing as regular columns with a default value
+- **extract**: Overloaded RPC functions (same name, different signatures) are detected and reported as a console warning during extract, listing all signatures
+
+## v0.4.2
+### Changed
+- **extract**: Removed `fn_` prefix from RPC function filenames (`rpc/get_users.sql` instead of `rpc/fn_get_users.sql`) to prevent LLMs from treating `fn_` as part of the function name
 
 ## v0.4.1
 ### Added

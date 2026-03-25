@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.0
+### Added
+- **deploy/sync**: RPC/function diff generation — local `<schema>/rpc/<fn>.sql` files are compared against the remote `pg_get_functiondef`. Changed or new functions generate `CREATE OR REPLACE FUNCTION` migrations automatically
+- **deploy/sync**: Table rename detection — when a table exists locally but not remotely, and a remote table with ≥70% column overlap is found, a `RENAME TABLE` migration is generated with a warning to review before applying
+- **deploy**: `--rls rewrite` flag — compares local `<schema>/rls/*.sql` against remote `pg_policies` and generates `DROP POLICY IF EXISTS` + `CREATE POLICY` migrations for changed/new/removed policies. Omit the flag to skip RLS (default)
+- **config**: `migration.naming` option in `supatool.config.json`: `"sequential"` generates `NNN_description.sql` (incrementing from the highest existing file number), `"timestamp"` (default) keeps the existing `YYYYMMDDHHMMSS_description.sql` format
+- **config**: `migration.dir` option to override the migration output directory (default: `supabase/migrations`)
+- **config:init**: Auto-creates `.env.local` template and checks `.gitignore`, auto-appending missing entries (`supatool.config.json`, `.env.local`) to prevent accidental secret commits
+
 ## v0.4.3
 ### Changed
 - **seed**: `tables.yaml` format changed to schema-grouped (no `tables:` wrapper key)

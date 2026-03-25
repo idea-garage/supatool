@@ -246,7 +246,8 @@ program
         connectionString: config.connectionString,
         schemaDir: options.schemaDir,
         tablePattern: options.tables,
-        force: options.force
+        force: options.force,
+        migrationConfig: config.migration
       });
     } catch (error) {
       console.error('⚠️ Sync error:', error);
@@ -264,6 +265,7 @@ program
   .option('--auto-apply', 'Auto-apply to remote (no confirmation)')
   .option('--dry-run', 'Preview changes only (recommended)')
   .option('--generate-only', 'Generate migration files only (no apply)')
+  .option('--rls <mode>', 'RLS migration mode: rewrite = DROP+CREATE policies (default: skip)', 'skip')
   .option('--config <path>', 'Configuration file path')
   .action(async (options: any) => {
     const config = resolveConfig({
@@ -321,7 +323,9 @@ program
         force: isAutoApply,
         dryRun: isDryRun,
         generateOnly: isGenerateOnly,
-        requireConfirmation: !isDryRun && !isAutoApply && !isGenerateOnly
+        requireConfirmation: !isDryRun && !isAutoApply && !isGenerateOnly,
+        migrationConfig: config.migration,
+        rlsMode: options.rls
       });
     } catch (error) {
       console.error('⚠️ Deploy error:', error);

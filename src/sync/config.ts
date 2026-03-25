@@ -13,10 +13,16 @@ if (fs.existsSync(envLocalPath)) {
   config({ path: envPath });
 }
 
+export interface MigrationConfig {
+  naming?: 'timestamp' | 'sequential';  // default: 'timestamp'
+  dir?: string;                          // default: 'supabase/migrations'
+}
+
 export interface SyncConfig {
   connectionString?: string;
   schemaDir: string;
   tablePattern: string;
+  migration?: MigrationConfig;
 }
 
 /**
@@ -44,31 +50,96 @@ export function loadConfig(configPath?: string): Partial<SyncConfig> {
  */
 export function resolveConfig(options: Partial<SyncConfig>, configPath?: string): SyncConfig {
   const fileConfig = loadConfig(configPath);
-  
+
+  const connectionString =
+    options.connectionString ||
+    process.env.SUPABASE_CONNECTION_STRING ||
+    process.env.DATABASE_URL ||
+    fileConfig.connectionString;
+
   return {
-    connectionString: 
-      options.connectionString || 
-      process.env.SUPABASE_CONNECTION_STRING || 
-      process.env.DATABASE_URL ||
-      fileConfig.connectionString,
+    connectionString,
     schemaDir: options.schemaDir || fileConfig.schemaDir || './supabase/schemas',
-    tablePattern: options.tablePattern || fileConfig.tablePattern || '*'
+    tablePattern: options.tablePattern || fileConfig.tablePattern || '*',
+    migration: fileConfig.migration
   };
 }
 
 /**
- * Generate config file template
+ * Generate config file template (no connection string — use .env.local)
  */
 export function createConfigTemplate(outputPath: string): void {
   const template = {
-    connectionString: "postgresql://user:password@host:port/database",
     schemaDir: "./supabase/schemas",
     tablePattern: "*",
-    "_comment": "It is recommended to set connection string in .env or .env.local file using SUPABASE_CONNECTION_STRING or DATABASE_URL"
+    migration: {
+      naming: "timestamp",
+      "_naming_comment": "Use 'sequential' for NNN_description.sql format, 'timestamp' for YYYYMMDDHHMMSS_description.sql",
+      dir: "supabase/migrations"
+    },
+    "_comment": "Set credentials in .env.local — never put secrets in this file."
   };
-  
+
   fs.writeFileSync(outputPath, JSON.stringify(template, null, 2), 'utf-8');
-  console.log(`Configuration template generated: ${outputPath}`);
-  console.log('⚠️  Remember to add the configuration file to .gitignore!');
-  console.log('💡 Manage connection string in .env or .env.local file');
+  console.log(`Config template generated: ${outputPath}`);
+
+  ensureEnvLocalTemplate();
+  checkGitignore(outputPath);
+}
+
+/**
+ * Write .env.local template if it doesn't exist yet.
+ */
+function ensureEnvLocalTemplate(): void {
+  const envLocalPath = path.join(process.cwd(), '.env.local');
+  if (fs.existsSync(envLocalPath)) return;
+
+  const template = [
+    '# supatool credentials — never commit this file',
+    '# Option A: Supabase URL + service role key (recommended)',
+    'SUPABASE_URL=https://your-project-ref.supabase.co',
+    'SUPABASE_SERVICE_ROLE_KEY=your-service-role-key',
+    '',
+    '# Option B: direct connection string',
+    '# SUPABASE_CONNECTION_STRING=postgresql://user:password@host:port/database',
+  ].join('\n') + '\n';
+
+  fs.writeFileSync(envLocalPath, template, 'utf-8');
+  console.log('.env.local template created — fill in your credentials.');
+}
+
+/**
+ * Warn if the config file or .env.local are not covered by .gitignore.
+ */
+function checkGitignore(configPath: string): void {
+  const gitignorePath = path.join(process.cwd(), '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    console.warn('Warning: .gitignore not found. Make sure to exclude .env.local and supatool.config.json.');
+    return;
+  }
+
+  const content = fs.readFileSync(gitignorePath, 'utf-8');
+  const lines = content.split('\n').map(l => l.trim());
+  const missing: string[] = [];
+
+  const configFile = path.basename(configPath);
+  if (!lines.some(l => l === configFile || l === `/${configFile}`)) {
+    missing.push(configFile);
+  }
+  if (!lines.some(l => l === '.env.local' || l === '*.local')) {
+    missing.push('.env.local');
+  }
+
+  if (missing.length > 0) {
+    console.warn(`\nWarning: The following are NOT in .gitignore — add them to avoid committing secrets:`);
+    for (const f of missing) {
+      console.warn(`  ${f}`);
+    }
+    // Auto-append to .gitignore
+    const toAdd = missing.map(f => f).join('\n') + '\n';
+    fs.appendFileSync(gitignorePath, '\n# supatool\n' + toAdd);
+    console.log(`Auto-added to .gitignore: ${missing.join(', ')}`);
+  } else {
+    console.log('.gitignore OK — credentials files are excluded.');
+  }
 } 

@@ -126,7 +126,7 @@ export async function generateMigrationFile(
   projectDir: string = '.',
   migrationConfig?: MigrationConfig
 ): Promise<string | null> {
-  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'supabase/migrations');
+  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'db/migrations');
 
   // Create migrations directory
   if (!fs.existsSync(migrationDir)) {
@@ -228,7 +228,7 @@ async function generateManualMigrationTemplate(
   projectDir: string,
   migrationConfig?: MigrationConfig
 ): Promise<string | null> {
-  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'supabase/migrations');
+  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'db/migrations');
 
   if (!fs.existsSync(migrationDir)) {
     fs.mkdirSync(migrationDir, { recursive: true });
@@ -325,7 +325,7 @@ export async function generateRenameTableMigrationFile(
   projectDir: string = '.',
   migrationConfig?: MigrationConfig
 ): Promise<string> {
-  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'supabase/migrations');
+  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'db/migrations');
   if (!fs.existsSync(migrationDir)) {
     fs.mkdirSync(migrationDir, { recursive: true });
   }
@@ -380,7 +380,7 @@ export async function generateFunctionMigrationFile(
 
   if (normalizedLocal === normalizedRemote) return null;
 
-  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'supabase/migrations');
+  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'db/migrations');
   if (!fs.existsSync(migrationDir)) {
     fs.mkdirSync(migrationDir, { recursive: true });
   }
@@ -425,7 +425,7 @@ export async function generateRlsMigrationFile(
 ): Promise<string | null> {
   if (changedPolicies.length === 0 && droppedPolicies.length === 0) return null;
 
-  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'supabase/migrations');
+  const migrationDir = path.join(projectDir, migrationConfig?.dir ?? 'db/migrations');
   if (!fs.existsSync(migrationDir)) {
     fs.mkdirSync(migrationDir, { recursive: true });
   }

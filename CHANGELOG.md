@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.0
+### Changed
+- **Breaking: default paths** changed from `supabase/` to `db/`:
+  - `schemaDir`: `./supabase/schemas` → `./db/schemas`
+  - `migration.dir`: `supabase/migrations` → `db/migrations`
+  - seed output default: `supabase/seeds` → `db/seeds`
+- **Connection string**: `DB_CONNECTION_STRING` is now the primary env var. `SUPABASE_CONNECTION_STRING` and `DATABASE_URL` remain accepted for backward compatibility.
+- **postgres:// support**: connection strings starting with `postgres://` (e.g. Cloud SQL) are now accepted in addition to `postgresql://`
+- **Package**: removed `@supabase/supabase-js` dependency. Supatool now works with any PostgreSQL database (Cloud SQL, Supabase, RDS, self-hosted).
+- **Description updated**: repositioned as a generic PostgreSQL tool, not Supabase-specific.
+
+### Added
+- **migrate command**: `supatool migrate` applies pending `db/migrations/*.sql` files to remote DB in alphabetical order. Applied files are tracked in a `_supatool_migrations` table (auto-created). Supports `--dry-run` and `--dir` options.
+
+### Removed
+- **sync command** (was already deprecated — use `deploy`)
+- **crud command** (Supabase-types CRUD gen — use an LLM instead)
+- **gen:crud command** (model YAML CRUD gen — deprecated)
+- **gen:all command** (included the above CRUD gen)
+
 ## v0.5.0
 ### Added
 - **deploy/sync**: RPC/function diff generation — local `<schema>/rpc/<fn>.sql` files are compared against the remote `pg_get_functiondef`. Changed or new functions generate `CREATE OR REPLACE FUNCTION` migrations automatically

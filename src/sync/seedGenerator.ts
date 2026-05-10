@@ -66,6 +66,7 @@ function parseTablesYaml(yamlPath: string): { schema: string; table: string }[] 
  * @param options SeedGenOptions
  */
 export async function generateSeedsFromRemote(options: SeedGenOptions): Promise<void> {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const tables = parseTablesYaml(options.tablesYamlPath);
 
   // Generate datetime subdir name (e.g. 20250705_1116_supatool)
@@ -79,7 +80,10 @@ export async function generateSeedsFromRemote(options: SeedGenOptions): Promise<
   const outDir = path.join(options.outputDir, folderName);
 
   // DB connection
-  const client = new Client({ connectionString: options.connectionString });
+  const client = new Client({
+    connectionString: options.connectionString,
+    ssl: { rejectUnauthorized: false }
+  });
   await client.connect();
 
   const processedFiles: { schema: string; table: string; fileName: string; rowCount: number }[] = [];
@@ -91,8 +95,14 @@ export async function generateSeedsFromRemote(options: SeedGenOptions): Promise<
       fs.mkdirSync(schemaDir, { recursive: true });
     }
     // Fetch data
-    const res = await client.query(`SELECT * FROM "${schema}"."${table}"`);
-    const rows = res.rows;
+    let rows: any[];
+    try {
+      const res = await client.query(`SELECT * FROM "${schema}"."${table}"`);
+      rows = res.rows;
+    } catch (err: any) {
+      console.warn(`⚠️  Skip: ${schema}.${table} — ${err.message}`);
+      continue;
+    }
     // Output JSON
     const fileName = `${table}_seed.json`;
     const filePath = path.join(schemaDir, fileName);
@@ -133,7 +143,7 @@ export async function generateSeedsFromRemote(options: SeedGenOptions): Promise<
 
 /** Utility to get table comment */
 async function getTableComment(connectionString: string, schema: string, table: string): Promise<string | null> {
-  const client = new Client({ connectionString });
+  const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
   await client.connect();
   try {
     const res = await client.query(

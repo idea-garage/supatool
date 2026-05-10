@@ -1,49 +1,62 @@
 // See: [src/bin/helptext.ts](./src/bin/helptext.ts) from project root
 // Help text (command section from README, English only)
 export const helpText = `
-Supatool CLI - Supabase schema extraction and TypeScript CRUD generation
+Supatool CLI - PostgreSQL schema management (Cloud SQL, Supabase, and any PostgreSQL)
 
 Usage:
   supatool <command> [options]
 
 Commands:
-  extract            Extract database objects from Supabase
+  extract            Extract database objects from remote DB into local files
+  deploy             Deploy local schema changes to remote (diff → migration → apply)
+  migrate            Apply pending db/migrations/*.sql files to remote DB
+  seed               Export table data as AI-friendly seed JSON
+  config:init        Generate supatool.config.json and .env.local template
   gen:types          Generate TypeScript types from model YAML
-  gen:crud           Generate CRUD TypeScript code from model YAML [deprecated - prefer writing code with LLM]
   gen:docs           Generate Markdown documentation from model YAML
-  gen:sql            Generate SQL (tables, relations, RLS/security) from model YAML
-  gen:rls            Generate RLS/security SQL from model YAML
-  gen:all            Generate all outputs from model YAML
-  create             Generate a template model YAML
-  crud               Generate CRUD code from Supabase type definitions [deprecated - prefer writing code with LLM]
-  deploy             Deploy local schema changes to remote (recommended)
-  sync               Sync local and remote schemas [deprecated - use deploy]
-  seed               Export selected table data as AI-friendly seed JSON
-  config:init        Generate configuration template
-  help               Show help
+  gen:sql            Generate SQL (tables, relations, RLS) from model YAML
+  gen:rls            Generate RLS policy SQL from model YAML
+  help               Show this help
 
 Common Options:
-  -c, --connection <string>    Supabase connection string
+  -c, --connection <string>    Connection string (postgresql:// or postgres://)
   -o, --output-dir <path>      Output directory
-  -t, --tables <pattern|path>  Table pattern or YAML path
-  --schema <schemas>           Target schemas (comma-separated)
+  --schema <schemas>           Target schemas (comma-separated, default: public)
   --config <path>              Configuration file path
   -f, --force                  Force overwrite
 
-seed command:
-  supatool seed -c <connection> [-t tables.yaml] [-o supabase/seeds]
+Examples:
 
-  tables.yaml format (schema-grouped):
-    public:
-      - users
-      - posts
-    admin:
-      - platforms
+  # Extract full schema
+  supatool extract --all -o db/schemas
 
-  Output: supabase/seeds/<timestamp>/<schema>/<table>_seed.json
-          supabase/seeds/llms.txt  (index for AI)
+  # Multiple schemas and table filter
+  supatool extract --schema public,agent -t "user_*" -o db/schemas
 
-For details, see the documentation.
+  # Deploy (preview first)
+  supatool deploy --table users --dry-run
+  supatool deploy --table all --dry-run
+
+  # Apply migrations
+  supatool migrate --dry-run
+  supatool migrate
+
+  # Seed export
+  supatool seed --tables tables.yaml -o db/seeds
+
+  # tables.yaml format:
+  #   public:
+  #     - users
+  #     - posts
+
+Connection string is read from (in priority order):
+  1. --connection option
+  2. DB_CONNECTION_STRING  (.env.local)
+  3. SUPABASE_CONNECTION_STRING  (legacy)
+  4. DATABASE_URL  (legacy)
+  5. supatool.config.json
+
+For details, see https://github.com/idea-garage/supatool
 `;
 
 // Model Schema Usage
@@ -63,8 +76,4 @@ Model Schema Usage (schemas/supatool-data.schema.ts):
   } else {
     console.log('Valid!');
   }
-
-- Use with AI:
-  const schemaJson = JSON.stringify(SUPATOOL_MODEL_SCHEMA, null, 2);
-  // Pass schemaJson to your AI prompt or API
-`; 
+`;

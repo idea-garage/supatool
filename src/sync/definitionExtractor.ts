@@ -19,8 +19,10 @@ export interface DefinitionExtractOptions {
   all?: boolean;
   tablePattern?: string;
   force?: boolean;
-  schemas?: string[]; // target schemas (default: ['public'])
-  version?: string;   // for output header (supatool version)
+  schemas?: string[];        // target schemas (default: ['public'])
+  excludeSchemas?: string[]; // schemas to exclude (used with --all-schemas)
+  allSchemas?: boolean;      // extract all schemas except excluded ones
+  version?: string;          // for output header (supatool version)
 }
 
 /** Single FK relation (for llms.txt RELATIONS) */
@@ -1530,18 +1532,23 @@ async function generateIndexFile(
  * Classify and output definitions
  */
 export async function extractDefinitions(options: DefinitionExtractOptions): Promise<void> {
-  const { 
-    connectionString, 
-    outputDir, 
-    separateDirectories = true, 
-    tablesOnly = false, 
+  const {
+    connectionString,
+    outputDir,
+    separateDirectories = true,
+    tablesOnly = false,
     viewsOnly = false,
     all = false,
     tablePattern = '*',
     force = false,
-    schemas = ['public'],
+    schemas: schemasOption = ['public'],
+    excludeSchemas = [],
+    allSchemas: useAllSchemas = false,
     version
   } = options;
+
+  // schemas will be resolved after DB connect when useAllSchemas is true
+  let schemas = schemasOption;
 
   // Disable Node.js SSL certificate verification
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -1678,6 +1685,19 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     
     await client.connect();
     spinner.text = 'Connected to database';
+
+    // Resolve schemas: when --all-schemas, fetch all from DB and subtract excludeSchemas
+    if (useAllSchemas) {
+      const SYSTEM_SCHEMAS = ['information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'];
+      const discovered = await fetchAllSchemas(client);
+      schemas = discovered.filter(s =>
+        !SYSTEM_SCHEMAS.includes(s) && !excludeSchemas.includes(s)
+      );
+      console.log(`Schemas (all minus excluded): ${schemas.join(', ')}`);
+    } else if (excludeSchemas.length > 0) {
+      schemas = schemas.filter(s => !excludeSchemas.includes(s));
+      console.log(`Schemas (filtered): ${schemas.join(', ')}`);
+    }
 
     let allDefinitions: TableDefinition[] = [];
 

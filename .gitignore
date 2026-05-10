@@ -26,3 +26,6 @@ docs/.*
 
 # dev
 .dev/
+# supatool
+supatool.config.json
+.env.local

@@ -15,7 +15,7 @@ if (fs.existsSync(envLocalPath)) {
 
 export interface MigrationConfig {
   naming?: 'timestamp' | 'sequential';  // default: 'timestamp'
-  dir?: string;                          // default: 'supabase/migrations'
+  dir?: string;                          // default: 'db/migrations'
 }
 
 export interface SyncConfig {
@@ -53,13 +53,14 @@ export function resolveConfig(options: Partial<SyncConfig>, configPath?: string)
 
   const connectionString =
     options.connectionString ||
+    process.env.DB_CONNECTION_STRING ||
     process.env.SUPABASE_CONNECTION_STRING ||
     process.env.DATABASE_URL ||
     fileConfig.connectionString;
 
   return {
     connectionString,
-    schemaDir: options.schemaDir || fileConfig.schemaDir || './supabase/schemas',
+    schemaDir: options.schemaDir || fileConfig.schemaDir || './db/schemas',
     tablePattern: options.tablePattern || fileConfig.tablePattern || '*',
     migration: fileConfig.migration
   };
@@ -70,12 +71,12 @@ export function resolveConfig(options: Partial<SyncConfig>, configPath?: string)
  */
 export function createConfigTemplate(outputPath: string): void {
   const template = {
-    schemaDir: "./supabase/schemas",
+    schemaDir: "./db/schemas",
     tablePattern: "*",
     migration: {
       naming: "timestamp",
       "_naming_comment": "Use 'sequential' for NNN_description.sql format, 'timestamp' for YYYYMMDDHHMMSS_description.sql",
-      dir: "supabase/migrations"
+      dir: "db/migrations"
     },
     "_comment": "Set credentials in .env.local — never put secrets in this file."
   };
@@ -96,12 +97,12 @@ function ensureEnvLocalTemplate(): void {
 
   const template = [
     '# supatool credentials — never commit this file',
-    '# Option A: Supabase URL + service role key (recommended)',
-    'SUPABASE_URL=https://your-project-ref.supabase.co',
-    'SUPABASE_SERVICE_ROLE_KEY=your-service-role-key',
+    '# PostgreSQL connection string (Cloud SQL, Supabase, or any PostgreSQL)',
+    'DB_CONNECTION_STRING=postgresql://user:password@host:port/database',
     '',
-    '# Option B: direct connection string',
+    '# Legacy aliases (still accepted for backward compatibility)',
     '# SUPABASE_CONNECTION_STRING=postgresql://user:password@host:port/database',
+    '# DATABASE_URL=postgresql://user:password@host:port/database',
   ].join('\n') + '\n';
 
   fs.writeFileSync(envLocalPath, template, 'utf-8');

@@ -1,7 +1,7 @@
 {
   "name": "supatool",
-  "version": "0.5.0",
-  "description": "CLI for Supabase: extract schema (tables, views, RLS, RPC) to files + llms.txt for LLM, deploy local schema, seed export. CRUD code gen deprecated.",
+  "version": "0.6.0",
+  "description": "CLI for PostgreSQL (Cloud SQL / Supabase): extract schema to files, deploy schema diffs, apply migrations, seed export.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -9,6 +9,7 @@
   },
 "scripts": {
   "build": "tsc",
+  "test": "npm run build && node test/smoke.js",
   "start": "tsx src/bin/supatool.ts",
   "local": "tsx src/bin/supatool.ts"
 },
@@ -17,18 +18,18 @@
     "bin"
   ],
   "keywords": [
+    "postgresql",
+    "cloud-sql",
     "supabase",
-    "crud",
     "cli",
     "typescript",
-    "React",
     "postgres",
-    "database"
+    "database",
+    "migration"
   ],
   "author": "IdeaGarage",
   "license": "MIT",
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.4",
     "commander": "^13.1.0",
     "diff": "^5.2.0",
     "dotenv": "^16.5.0",

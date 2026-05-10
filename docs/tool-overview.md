@@ -1,52 +1,50 @@
 # Supatool overview
 
-CLI for Supabase schema extraction, seed export, and deploy. See the [README](../README.md) for basic usage.
+CLI for PostgreSQL schema extraction, migration, seed export, and deploy. Works with Cloud SQL, Supabase, and any PostgreSQL database. See the [README](../README.md) for basic usage.
 
 ## Features
 
-- **extract** – Dump tables, views, RLS, functions, triggers from the DB into files. Outputs `llms.txt` as a catalog for AI/agents.
-- **seed** – Export selected table data as JSON. Writes an `llms.txt` index under `supabase/seeds/`.
-- **deploy** – Push local schema to remote (use `--dry-run` to preview).
-- **gen:*** – Generate SQL, types, CRUD, RLS, docs from YAML/JSON models (CRUD generation is deprecated; prefer writing code with an LLM).
+- **extract** – Dump tables, views, RLS, functions, triggers from the DB into local files. Outputs `llms.txt` as a catalog for AI/agents.
+- **deploy** – Push local schema diff to remote (use `--dry-run` to preview). Generates migration files in `db/migrations/`.
+- **migrate** – Apply pending `db/migrations/*.sql` files to remote. Tracks applied migrations in `_supatool_migrations` table.
+- **seed** – Export selected table data as JSON. Writes an `llms.txt` index under `db/seeds/`.
+- **gen:*** – Generate SQL, types, RLS, docs from YAML/JSON models.
 
 ## Use cases
 
-- Keep Supabase schema in files and feed them to LLMs or agents.
+- Keep PostgreSQL schema in files and feed them to LLMs or agents.
 - Export table data as seed JSON for AI-assisted coding.
 - Deploy DDL edited locally to remote.
+- Apply migration files to Cloud SQL or any PostgreSQL DB.
 
 ## Command examples
 
 ```sh
 # Extract full schema
-supatool extract --all -o supabase/schemas
+supatool extract --all -o db/schemas
 
 # Multiple schemas and table filter
-supatool extract --schema public,agent -t "user_*" -o supabase/schemas
+supatool extract --schema public,agent -t "user_*" -o db/schemas
+
+# Deploy (dry run, then apply)
+supatool deploy --table users --dry-run
+supatool deploy --table users
+
+# Apply pending migrations
+supatool migrate --dry-run
+supatool migrate
 
 # Seed export
-supatool seed --tables tables.yaml
-
-# Deploy (dry run)
-supatool deploy --dry-run
+supatool seed --tables tables.yaml -o db/seeds
 ```
 
-From a YAML model (gen:types, gen:crud are deprecated):
+From a YAML model:
 
 ```sh
 supatool gen:types path/to/model.yaml
 supatool gen:sql path/to/model.yaml
 supatool gen:rls path/to/model.yaml
 supatool gen:docs path/to/model.yaml
-supatool gen:all path/to/model.yaml
-```
-
-## Use from TypeScript
-
-Core functionality is available as a TypeScript module.
-
-```ts
-import { parseModel, generateSQL } from 'supatool';
 ```
 
 ## Related docs

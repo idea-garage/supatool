@@ -30,8 +30,12 @@ export async function fetchRemoteSchemas(connectionString: string, targetTableNa
   
   try {
     // Basic connection string check
-    if (!connectionString || !connectionString.startsWith('postgresql://')) {
-      throw new Error('Invalid connection string. Please specify a valid postgresql:// format.');
+    if (
+      !connectionString ||
+      (!connectionString.startsWith('postgresql://') &&
+       !connectionString.startsWith('postgres://'))
+    ) {
+      throw new Error('Invalid connection string. Please specify a valid postgresql:// or postgres:// format.');
     }
 
     // Parse URL and display connection info

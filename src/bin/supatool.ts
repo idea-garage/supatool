@@ -48,7 +48,7 @@ program
   .option('--no-separate', 'Output all objects in same directory')
   .option('--schema <schemas>', 'Target schemas, comma-separated (default: public)')
   .option('--all-schemas', 'Target all schemas in the DB (use with -e to exclude some)')
-  .option('-e, --exclude-schema <schemas>', 'Schemas to exclude, comma-separated (use with --all-schemas)')
+  .option('-e, --exclude-schema <schemas>', 'Schemas to exclude, comma-separated. Without --schema, targets all schemas automatically.')
   .option('--config <path>', 'Configuration file path')
   .option('-f, --force', 'Force overwrite without confirmation')
   .action(async (options: any) => {
@@ -79,6 +79,7 @@ program
         schemas: schemas,
         allSchemas: options.allSchemas || false,
         excludeSchemas,
+        schemasExplicit: !!options.schema,
         version
       });
     } catch (error) {

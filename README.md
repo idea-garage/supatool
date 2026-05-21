@@ -89,9 +89,19 @@ Pull schema from remote DB into local files:
 ```bash
 supatool extract --all -o db/schemas
 # Options:
-# --schema public,agent   Specify schemas
+# --schema public,agent   Specify schemas (explicit list)
+# -e auth,storage         Exclude schemas — targets all others automatically
 # -t "user_*"             Filter tables by pattern
-# --force                 Clear output dir before writing
+# --force                 Delete .sql files for objects removed from DB
+```
+
+Unchanged `.sql` files are never overwritten (content is compared excluding the generated header line). Use `--force` to also clean up `.sql` files whose corresponding DB objects have been dropped.
+
+When you have many schemas and only want to exclude a few, use `-e` without `--schema`:
+
+```bash
+# Extract everything except auth and storage schemas
+supatool extract --all -e auth,storage -o db/schemas
 ```
 
 ### Deploy

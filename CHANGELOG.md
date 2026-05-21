@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.1
+### Changed
+- **extract**: Skip writing a `.sql` file when its content is unchanged (header line excluded from comparison). Prevents unnecessary file churn on re-extraction and preserves file modification times for unmodified objects.
+- **extract `--force`**: No longer deletes the entire output directory. Instead, only `.sql` files whose corresponding DB object no longer exists are removed. Index files (`llms.txt`, `README.md`, etc.) are always regenerated.
+- **extract `-e`**: When `--schema` is not explicitly specified, `-e` alone now implies all-schemas mode — all schemas in the DB are targeted except the excluded ones. `--all-schemas -e ...` still works and behaves identically.
+
 ## v0.6.0
 ### Changed
 - **Breaking: default paths** changed from `supabase/` to `db/`:

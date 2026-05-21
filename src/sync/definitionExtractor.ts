@@ -20,8 +20,9 @@ export interface DefinitionExtractOptions {
   tablePattern?: string;
   force?: boolean;
   schemas?: string[];        // target schemas (default: ['public'])
-  excludeSchemas?: string[]; // schemas to exclude (used with --all-schemas)
+  excludeSchemas?: string[]; // schemas to exclude. When --schema is not specified, implies all-schemas mode.
   allSchemas?: boolean;      // extract all schemas except excluded ones
+  schemasExplicit?: boolean; // true when --schema was explicitly provided by the user
   version?: string;          // for output header (supatool version)
 }
 
@@ -1191,7 +1192,8 @@ async function saveDefinitionsByType(
   rpcTables: RpcTableUsage[] = [],
   allSchemas: string[] = [],
   version?: string,
-  tableRlsStatus: TableRlsStatus[] = []
+  tableRlsStatus: TableRlsStatus[] = [],
+  force: boolean = false
 ): Promise<void> {
   const fs = await import('fs');
   const path = await import('path');
@@ -1287,6 +1289,7 @@ async function saveDefinitionsByType(
   }
 
   const fsPromises = await import('fs/promises');
+  const writtenPaths = new Set<string>();
 
   for (const def of toWrite) {
     const typeDir = typeDirNames[def.type as keyof typeof typeDirNames];
@@ -1302,7 +1305,33 @@ async function saveDefinitionsByType(
     const fileName = `${def.name}.sql`;
     const filePath = path.join(targetDir, fileName);
     const ddlWithNewline = def.ddl.endsWith('\n') ? def.ddl : def.ddl + '\n';
-    await fsPromises.writeFile(filePath, headerComment + ddlWithNewline);
+    const newContent = headerComment + ddlWithNewline;
+    writtenPaths.add(filePath);
+
+    // Skip write if content unchanged (ignore header line which contains the date)
+    if (fs.existsSync(filePath)) {
+      const existingContent = await fsPromises.readFile(filePath, 'utf8');
+      const stripHeader = (c: string) => c.split('\n').slice(1).join('\n');
+      if (stripHeader(existingContent) === stripHeader(newContent)) {
+        continue;
+      }
+    }
+    await fsPromises.writeFile(filePath, newContent);
+  }
+
+  // When force: delete SQL files that no longer correspond to any extracted object
+  if (force && fs.existsSync(outputDir)) {
+    const deleteStaleSqlFiles = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          deleteStaleSqlFiles(fullPath);
+        } else if (entry.name.endsWith('.sql') && !writtenPaths.has(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      }
+    };
+    deleteStaleSqlFiles(outputDir);
   }
 
   await generateIndexFile(toWrite, outputDir, separateDirectories, multiSchema, relations, rpcTables, allSchemas, schemas, version, tableRlsStatus);
@@ -1544,6 +1573,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     schemas: schemasOption = ['public'],
     excludeSchemas = [],
     allSchemas: useAllSchemas = false,
+    schemasExplicit = false,
     version
   } = options;
 
@@ -1686,8 +1716,9 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     await client.connect();
     spinner.text = 'Connected to database';
 
-    // Resolve schemas: when --all-schemas, fetch all from DB and subtract excludeSchemas
-    if (useAllSchemas) {
+    // Resolve schemas: --all-schemas or -e alone (without explicit --schema) → fetch all from DB and subtract excludeSchemas
+    const useAllSchemasEffective = useAllSchemas || (excludeSchemas.length > 0 && !schemasExplicit);
+    if (useAllSchemasEffective) {
       const SYSTEM_SCHEMAS = ['information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'];
       const discovered = await fetchAllSchemas(client);
       schemas = discovered.filter(s =>
@@ -1856,14 +1887,9 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       }
     }
 
-    // When force: remove output dir then write (so removed tables don't leave files)
-    if (force && fs.existsSync(outputDir)) {
-      fs.rmSync(outputDir, { recursive: true });
-    }
-
     // Save definitions (table+RLS+triggers merged, schema folders)
     spinner.text = 'Saving definitions to files...';
-    await saveDefinitionsByType(allDefinitions, outputDir, separateDirectories, schemas, relations, rpcTables, allSchemas, version, tableRlsStatus);
+    await saveDefinitionsByType(allDefinitions, outputDir, separateDirectories, schemas, relations, rpcTables, allSchemas, version, tableRlsStatus, force);
 
     // Warn at extract time when any table has RLS disabled
     const rlsNotEnabled = tableRlsStatus.filter(s => !s.rlsEnabled);

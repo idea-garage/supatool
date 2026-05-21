@@ -1,6 +1,6 @@
 {
   "name": "supatool",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "CLI for PostgreSQL (Cloud SQL / Supabase): extract schema to files, deploy schema diffs, apply migrations, seed export.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,6 +27,14 @@
     "database",
     "migration"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/idea-garage/supatool"
+  },
+  "homepage": "https://github.com/idea-garage/supatool#readme",
+  "bugs": {
+    "url": "https://github.com/idea-garage/supatool/issues"
+  },
   "author": "IdeaGarage",
   "license": "MIT",
   "dependencies": {

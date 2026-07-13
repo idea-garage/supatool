@@ -1551,7 +1551,7 @@ async function generateIndexFile(
         }
       : undefined
   };
-  writeFileIfChanged(path.join(outputDir, 'schema_index.json'), JSON.stringify(schemaIndex, null, 2) + '\n');
+  writeFileIfChanged(path.join(outputDir, 'schema_index.json'), JSON.stringify(schemaIndex, null, 2));
 
   // schema_summary.md (one-file overview for AI) — include RLS status per table
   let summaryMd = '# Schema summary\n\n';
@@ -1589,6 +1589,7 @@ async function generateIndexFile(
 
   // RLS disabled tables warning doc (tables only; RLS enabled with 0 policies is not warned)
   const rlsNotEnabled = tableRlsStatus.filter(s => !s.rlsEnabled);
+  const rlsWarningsPath = path.join(outputDir, 'rls_warnings.md');
   if (rlsNotEnabled.length > 0) {
     let warnMd = '# Tables with RLS disabled (warning)\n\n';
     warnMd += 'The following tables do not have Row Level Security enabled.\n';
@@ -1597,7 +1598,10 @@ async function generateIndexFile(
     rlsNotEnabled.forEach(s => {
       warnMd += `| ${s.schema} | ${s.table} |\n`;
     });
-    writeFileIfChanged(path.join(outputDir, 'rls_warnings.md'), warnMd);
+    writeFileIfChanged(rlsWarningsPath, warnMd);
+  } else if (fs.existsSync(rlsWarningsPath)) {
+    // All RLS issues resolved — remove stale warning file
+    fs.unlinkSync(rlsWarningsPath);
   }
 }
 
@@ -1765,7 +1769,11 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       customTypes: { current: 0, total: 0 }
     };
 
-    if (all) {
+    // --schema-only implies full extraction of all object types for the target schema,
+    // so that --force does not incorrectly delete rpc/cron/types files.
+    const effectiveAll = all || schemaOnly;
+
+    if (effectiveAll) {
       // Get total count for each object type first
       spinner.text = 'Counting database objects...';
       
@@ -1832,7 +1840,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       `);
       progress.customTypes.total = parseInt(typesCountResult.rows[0].count);
 
-      // When --all: fetch all objects (sequential)
+      // When --all / --schema-only: fetch all objects (sequential)
       const tables = await fetchTableDefinitions(client, spinner, progress, schemas);
       const rlsPolicies = await fetchRlsPolicies(client, spinner, progress, schemas);
       const functions = await fetchFunctions(client, spinner, progress, schemas);

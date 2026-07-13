@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.4
+### Fixed
+- **extract `--schema-only`**: Previously extracted tables only, causing RPC/cron/types files to be absent from `writtenPaths` and deleted by `--force`. `--schema-only` now implies full object extraction (equivalent to `--all`) for the target schema.
+- **extract**: `schema_index.json` was rewritten on every run due to a trailing newline mismatch between the written content and the existing file. Trailing `\n` removed; content is now compared correctly and the file is skipped when unchanged.
+- **extract**: `rls_warnings.md` was never deleted even after all RLS violations were resolved, leaving a stale warning file. It is now removed when no disabled-RLS tables are found.
+
 ## v0.6.3
 ### Fixed
 - **extract `--schema-only`**: Single-schema runs now correctly write to `<outputDir>/<schema>/` subdirectories. Previously, `--schema foo --schema-only` treated the run as non-multi-schema and wrote files flat into `<outputDir>/`, causing both incorrect output paths and unintended deletion of other schemas' files when `--force` was combined.

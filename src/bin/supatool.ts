@@ -49,6 +49,7 @@ program
   .option('--schema <schemas>', 'Target schemas, comma-separated (default: public)')
   .option('--all-schemas', 'Target all schemas in the DB (use with -e to exclude some)')
   .option('-e, --exclude-schema <schemas>', 'Schemas to exclude, comma-separated. Without --schema, targets all schemas automatically.')
+  .option('--schema-only', 'Regenerate only the specified schema files; do not touch other schemas or index files (llms.txt, schema_index.json, etc.)')
   .option('--config <path>', 'Configuration file path')
   .option('-f, --force', 'Force overwrite without confirmation')
   .action(async (options: any) => {
@@ -59,6 +60,19 @@ program
     if (!config.connectionString) connectionRequiredError();
 
     try {
+      if (options.schemaOnly && !options.schema) {
+        console.error('⚠️  --schema-only requires --schema to be specified.');
+        process.exit(1);
+      }
+      if (options.schemaOnly && options.all) {
+        console.error('⚠️  --schema-only cannot be combined with --all. Use --schema-only without --all to regenerate only the specified schema files.');
+        process.exit(1);
+      }
+      if (options.schemaOnly && options.allSchemas) {
+        console.error('⚠️  --schema-only cannot be combined with --all-schemas.');
+        process.exit(1);
+      }
+
       let schemas = ['public'];
       if (options.schema) {
         schemas = options.schema.split(',').map((s: string) => s.trim());
@@ -80,6 +94,7 @@ program
         allSchemas: options.allSchemas || false,
         excludeSchemas,
         schemasExplicit: !!options.schema,
+        schemaOnly: options.schemaOnly || false,
         version
       });
     } catch (error) {

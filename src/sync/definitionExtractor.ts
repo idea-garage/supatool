@@ -23,6 +23,7 @@ export interface DefinitionExtractOptions {
   excludeSchemas?: string[]; // schemas to exclude. When --schema is not specified, implies all-schemas mode.
   allSchemas?: boolean;      // extract all schemas except excluded ones
   schemasExplicit?: boolean; // true when --schema was explicitly provided by the user
+  schemaOnly?: boolean;      // regenerate only the specified schemas; do not touch other schema files or index files
   version?: string;          // for output header (supatool version)
 }
 
@@ -309,12 +310,11 @@ async function fetchRelationList(client: Client, schemas: string[] = ['public'])
  */
 async function fetchAllSchemas(client: Client): Promise<string[]> {
   const result = await client.query(`
-    SELECT schema_name
-    FROM information_schema.schemata
-    WHERE schema_name NOT LIKE 'pg_%'
-      AND schema_name != 'information_schema'
-      AND schema_name != 'pg_catalog'
-    ORDER BY schema_name
+    SELECT nspname AS schema_name
+    FROM pg_catalog.pg_namespace
+    WHERE nspname NOT LIKE 'pg_%'
+      AND nspname != 'information_schema'
+    ORDER BY nspname
   `);
   return result.rows.map((r: any) => r.schema_name);
 }
@@ -1193,7 +1193,8 @@ async function saveDefinitionsByType(
   allSchemas: string[] = [],
   version?: string,
   tableRlsStatus: TableRlsStatus[] = [],
-  force: boolean = false
+  force: boolean = false,
+  schemaOnly: boolean = false
 ): Promise<void> {
   const fs = await import('fs');
   const path = await import('path');
@@ -1275,7 +1276,10 @@ async function saveDefinitionsByType(
     ...customTypes
   ];
 
-  const multiSchema = schemas.length > 1;
+  // schemaOnly always uses schema subdirectories (outputDir/<schema>/type/)
+  // so that single-schema --schema-only runs write to the correct location
+  // and don't interfere with other schemas already on disk.
+  const multiSchema = schemas.length > 1 || schemaOnly;
   const typeDirNames = {
     table: 'tables',
     view: 'views',
@@ -1319,7 +1323,8 @@ async function saveDefinitionsByType(
     await fsPromises.writeFile(filePath, newContent);
   }
 
-  // When force: delete SQL files that no longer correspond to any extracted object
+  // When force: delete SQL files that no longer correspond to any extracted object.
+  // With schemaOnly: restrict deletion to the target schema directories only.
   if (force && fs.existsSync(outputDir)) {
     const deleteStaleSqlFiles = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -1331,10 +1336,42 @@ async function saveDefinitionsByType(
         }
       }
     };
-    deleteStaleSqlFiles(outputDir);
+
+    if (schemaOnly) {
+      // Only scan within the target schema directories
+      for (const schemaName of schemas) {
+        const schemaDir = path.join(outputDir, schemaName);
+        if (fs.existsSync(schemaDir)) {
+          deleteStaleSqlFiles(schemaDir);
+        }
+      }
+    } else {
+      deleteStaleSqlFiles(outputDir);
+    }
+  }
+
+  // When schemaOnly: skip index file regeneration to avoid overwriting
+  // shared index files (llms.txt, schema_index.json, etc.) with partial data.
+  if (schemaOnly) {
+    return;
   }
 
   await generateIndexFile(toWrite, outputDir, separateDirectories, multiSchema, relations, rpcTables, allSchemas, schemas, version, tableRlsStatus);
+}
+
+/**
+ * Write a file only when content has changed, to avoid unnecessary Git diffs.
+ * When skipFirstLine is true, the first line (typically a date-bearing header) is
+ * excluded from the comparison so that daily date changes don't trigger writes.
+ */
+function writeFileIfChanged(filePath: string, newContent: string, skipFirstLine: boolean = false): void {
+  const fs = require('fs');
+  if (fs.existsSync(filePath)) {
+    const existing = fs.readFileSync(filePath, 'utf8');
+    const strip = (c: string) => skipFirstLine ? c.split('\n').slice(1).join('\n') : c;
+    if (strip(existing) === strip(newContent)) return;
+  }
+  fs.writeFileSync(filePath, newContent, 'utf8');
 }
 
 /**
@@ -1478,8 +1515,8 @@ async function generateIndexFile(
 
   const readmePath = path.join(outputDir, 'README.md');
   const llmsPath = path.join(outputDir, 'llms.txt');
-  fs.writeFileSync(readmePath, readmeContent);
-  fs.writeFileSync(llmsPath, llmsContent);
+  writeFileIfChanged(readmePath, readmeContent, true);
+  writeFileIfChanged(llmsPath, llmsContent, true);
 
   // schema_index.json (same data for agents that parse JSON)
   const schemaIndex = {
@@ -1507,7 +1544,7 @@ async function generateIndexFile(
         }
       : undefined
   };
-  fs.writeFileSync(path.join(outputDir, 'schema_index.json'), JSON.stringify(schemaIndex, null, 2), 'utf8');
+  writeFileIfChanged(path.join(outputDir, 'schema_index.json'), JSON.stringify(schemaIndex, null, 2) + '\n');
 
   // schema_summary.md (one-file overview for AI) — include RLS status per table
   let summaryMd = '# Schema summary\n\n';
@@ -1541,7 +1578,7 @@ async function generateIndexFile(
     summaryMd += `- Extracted: ${allSchemas.filter(s => extractedSet.has(s)).join(', ') || '(none)'}\n`;
     summaryMd += `- Not extracted: ${allSchemas.filter(s => !extractedSet.has(s)).join(', ') || '(none)'}\n`;
   }
-  fs.writeFileSync(path.join(outputDir, 'schema_summary.md'), summaryMd, 'utf8');
+  writeFileIfChanged(path.join(outputDir, 'schema_summary.md'), summaryMd);
 
   // RLS disabled tables warning doc (tables only; RLS enabled with 0 policies is not warned)
   const rlsNotEnabled = tableRlsStatus.filter(s => !s.rlsEnabled);
@@ -1553,7 +1590,7 @@ async function generateIndexFile(
     rlsNotEnabled.forEach(s => {
       warnMd += `| ${s.schema} | ${s.table} |\n`;
     });
-    fs.writeFileSync(path.join(outputDir, 'rls_warnings.md'), warnMd, 'utf8');
+    writeFileIfChanged(path.join(outputDir, 'rls_warnings.md'), warnMd);
   }
 }
 
@@ -1574,6 +1611,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     excludeSchemas = [],
     allSchemas: useAllSchemas = false,
     schemasExplicit = false,
+    schemaOnly = false,
     version
   } = options;
 
@@ -1600,21 +1638,15 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
 
   // URL encode password part
   let encodedConnectionString = connectionString;
-  console.log('🔍 Original connection string:', connectionString);
-  
+
   try {
     // Special handling when password contains @
     if (connectionString.includes('@') && connectionString.split('@').length > 2) {
-      console.log('⚠️ Password contains @, executing special handling');
       // Use last @ as delimiter
       const parts = connectionString.split('@');
       const lastPart = parts.pop(); // Last part (host:port/database)
       const firstParts = parts.join('@'); // First part (postgresql://user:password)
-      
-      console.log('   Split result:');
-      console.log('   First part:', firstParts);
-      console.log('   Last part:', lastPart);
-      
+
       // Encode password part
       const colonIndex = firstParts.lastIndexOf(':');
       if (colonIndex > 0) {
@@ -1622,53 +1654,41 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
         const password = firstParts.substring(colonIndex + 1);
         const encodedPassword = encodeURIComponent(password);
         encodedConnectionString = `${protocolAndUser}:${encodedPassword}@${lastPart}`;
-        
-        console.log('   Encode result:');
-        console.log('   Protocol+User:', protocolAndUser);
-        console.log('   Original password:', password);
-        console.log('   Encoded password:', encodedPassword);
-        console.log('   Final connection string:', encodedConnectionString);
       }
     } else {
-      console.log('✅ Executing normal URL parsing');
       // Normal URL parsing
       const url = new URL(connectionString);
-      
-      // Handle username containing dots
-      if (url.username && url.username.includes('.')) {
-        console.log(`Username (with dots): ${url.username}`);
-      }
-      
+
       if (url.password) {
         // Encode only password part
         const encodedPassword = encodeURIComponent(url.password);
         url.password = encodedPassword;
         encodedConnectionString = url.toString();
-        console.log('   Password encoded:', encodedPassword);
       }
     }
-    
+
     // Add SSL settings for Supabase connection
     if (!encodedConnectionString.includes('sslmode=')) {
       const separator = encodedConnectionString.includes('?') ? '&' : '?';
       encodedConnectionString += `${separator}sslmode=require`;
-      console.log('   SSL setting added:', encodedConnectionString);
     }
-    
-    // Display debug info (password hidden)
-    const debugUrl = new URL(encodedConnectionString);
-    const maskedPassword = debugUrl.password ? '*'.repeat(debugUrl.password.length) : '';
-    debugUrl.password = maskedPassword;
-    console.log('🔍 Connection info:');
-    console.log(`   Host: ${debugUrl.hostname}`);
-    console.log(`   Port: ${debugUrl.port}`);
-    console.log(`   Database: ${debugUrl.pathname.slice(1)}`);
-    console.log(`   User: ${debugUrl.username}`);
-    console.log(`   SSL: ${debugUrl.searchParams.get('sslmode') || 'require'}`);
+
+    // Debug-only: connection info (no credentials)
+    if (process.env.SUPATOOL_DEBUG) {
+      const debugUrl = new URL(encodedConnectionString);
+      console.log('🔍 Connection info:');
+      console.log(`   Host: ${debugUrl.hostname}`);
+      console.log(`   Port: ${debugUrl.port}`);
+      console.log(`   Database: ${debugUrl.pathname.slice(1)}`);
+      console.log(`   User: ${debugUrl.username}`);
+      console.log(`   SSL: ${debugUrl.searchParams.get('sslmode') || 'require'}`);
+    }
   } catch (error) {
     // Use original string if URL parsing fails
-    console.warn('Failed to parse connection string URL. May contain special characters.');
-    console.warn('Error details:', error instanceof Error ? error.message : String(error));
+    if (process.env.SUPATOOL_DEBUG) {
+      console.warn('Failed to parse connection string URL. May contain special characters.');
+      console.warn('Error details:', error instanceof Error ? error.message : String(error));
+    }
   }
 
   const fs = await import('fs');
@@ -1708,11 +1728,6 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
   });
   
   try {
-    // Debug before connect
-    console.log('🔧 Connection settings:');
-    console.log(`   SSL: rejectUnauthorized=false`);
-    console.log(`   Connection string length: ${encodedConnectionString.length}`);
-    
     await client.connect();
     spinner.text = 'Connected to database';
 
@@ -1889,7 +1904,7 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
 
     // Save definitions (table+RLS+triggers merged, schema folders)
     spinner.text = 'Saving definitions to files...';
-    await saveDefinitionsByType(allDefinitions, outputDir, separateDirectories, schemas, relations, rpcTables, allSchemas, version, tableRlsStatus, force);
+    await saveDefinitionsByType(allDefinitions, outputDir, separateDirectories, schemas, relations, rpcTables, allSchemas, version, tableRlsStatus, force, schemaOnly);
 
     // Warn at extract time when any table has RLS disabled
     const rlsNotEnabled = tableRlsStatus.filter(s => !s.rlsEnabled);

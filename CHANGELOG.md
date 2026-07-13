@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.2
+### Added
+- **extract `--schema-only`**: Regenerates only the specified schema's files without touching other schemas or shared index files (`llms.txt`, `schema_index.json`, `README.md`, etc.). Useful when multiple schemas are extracted and only one needs to be refreshed. When combined with `--force`, stale `.sql` file deletion is also scoped to the target schema directories only.
+
+### Changed
+- **extract**: Index files (`llms.txt`, `README.md`, `schema_index.json`, `schema_summary.md`, `rls_warnings.md`) are now skipped if their content is unchanged (header date line excluded from comparison). Prevents unnecessary Git diffs on re-extraction when the schema has not changed.
+- **extract**: Removed connection string and password logging from standard output. Credentials (raw connection string, password, encoded password) are no longer printed. Connection details (host, port, database, user) are available only when `SUPATOOL_DEBUG=1` is set.
+
 ## v0.6.1
 ### Changed
 - **extract**: Skip writing a `.sql` file when its content is unchanged (header line excluded from comparison). Prevents unnecessary file churn on re-extraction and preserves file modification times for unmodified objects.

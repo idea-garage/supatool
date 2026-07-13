@@ -22,6 +22,7 @@ Common Options:
   -c, --connection <string>    Connection string (postgresql:// or postgres://)
   -o, --output-dir <path>      Output directory
   --schema <schemas>           Target schemas (comma-separated, default: public)
+  --schema-only                Regenerate only the specified schema files; skip index files
   --config <path>              Configuration file path
   -f, --force                  Force overwrite
 

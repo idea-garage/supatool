@@ -1,6 +1,6 @@
 {
   "name": "supatool",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "CLI for PostgreSQL (Cloud SQL / Supabase): extract schema to files, deploy schema diffs, apply migrations, seed export.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

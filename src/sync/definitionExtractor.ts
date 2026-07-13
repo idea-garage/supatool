@@ -1058,23 +1058,30 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
     `, [schemaName, tableName]),
     
     // Get FOREIGN KEY constraints
+    // Use pg_constraint directly to avoid the N² row explosion that occurs when
+    // joining kcu × ccu on constraint_name alone for composite FKs.
     client.query(`
-      SELECT 
-        tc.constraint_name,
-        string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) as columns,
-        ccu.table_schema AS foreign_table_schema,
-        ccu.table_name AS foreign_table_name,
-        string_agg(ccu.column_name, ', ' ORDER BY kcu.ordinal_position) as foreign_columns
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu 
-        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-      JOIN information_schema.constraint_column_usage ccu 
-        ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-      WHERE tc.table_schema = $1
-        AND tc.table_name = $2
-        AND tc.constraint_type = 'FOREIGN KEY'
-      GROUP BY tc.constraint_name, ccu.table_schema, ccu.table_name
-      ORDER BY tc.constraint_name
+      SELECT
+        c.conname AS constraint_name,
+        (SELECT string_agg(a.attname, ', ' ORDER BY u.ord)
+         FROM unnest(c.conkey) WITH ORDINALITY AS u(attnum, ord)
+         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum
+        ) AS columns,
+        fn.nspname AS foreign_table_schema,
+        fc.relname AS foreign_table_name,
+        (SELECT string_agg(a.attname, ', ' ORDER BY u.ord)
+         FROM unnest(c.confkey) WITH ORDINALITY AS u(attnum, ord)
+         JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = u.attnum
+        ) AS foreign_columns
+      FROM pg_constraint c
+      JOIN pg_class rel ON rel.oid = c.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      JOIN pg_class fc ON fc.oid = c.confrelid
+      JOIN pg_namespace fn ON fn.oid = fc.relnamespace
+      WHERE c.contype = 'f'
+        AND nsp.nspname = $1
+        AND rel.relname = $2
+      ORDER BY c.conname
     `, [schemaName, tableName])
   ]);
 

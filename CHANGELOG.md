@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.3
+### Fixed
+- **extract `--schema-only`**: Single-schema runs now correctly write to `<outputDir>/<schema>/` subdirectories. Previously, `--schema foo --schema-only` treated the run as non-multi-schema and wrote files flat into `<outputDir>/`, causing both incorrect output paths and unintended deletion of other schemas' files when `--force` was combined.
+- **extract `--schema-only --force`**: Stale file deletion is now always scoped to the target schema directories regardless of how many schemas are specified. Previously the scope restriction was incorrectly gated on `schemas.length > 1`.
+- **extract**: Composite foreign keys no longer expand to N² columns in generated DDL. The previous query joined `information_schema.key_column_usage` × `constraint_column_usage` on constraint name alone, producing N² rows for an N-column composite FK (e.g. 2-column FK → 4 columns). Replaced with a `pg_constraint`-based query using `unnest(conkey/confkey) WITH ORDINALITY` to resolve column names in correct order without duplication.
+
+### Added
+- **extract `--schema-only`**: CLI now rejects invalid option combinations with a clear error message:
+  - `--schema-only` without `--schema`
+  - `--schema-only --all`
+  - `--schema-only --all-schemas`
+
 ## v0.6.2
 ### Added
 - **extract `--schema-only`**: Regenerates only the specified schema's files without touching other schemas or shared index files (`llms.txt`, `schema_index.json`, `README.md`, etc.). Useful when multiple schemas are extracted and only one needs to be refreshed. When combined with `--force`, stale `.sql` file deletion is also scoped to the target schema directories only.

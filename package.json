@@ -1,6 +1,6 @@
 {
   "name": "supatool",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "CLI for PostgreSQL (Cloud SQL / Supabase): extract schema to files, deploy schema diffs, apply migrations, seed export.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +9,7 @@
   },
 "scripts": {
   "build": "tsc",
-  "test": "npm run build && node test/smoke.js",
+  "test": "npm run build && node test/smoke.js && node test/definition-extractor.js",
   "start": "tsx src/bin/supatool.ts",
   "local": "tsx src/bin/supatool.ts"
 },

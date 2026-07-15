@@ -1012,7 +1012,9 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       SELECT column_name
       FROM information_schema.table_constraints tc
       JOIN information_schema.key_column_usage kcu 
-        ON tc.constraint_name = kcu.constraint_name
+        ON tc.constraint_catalog = kcu.constraint_catalog
+        AND tc.constraint_schema = kcu.constraint_schema
+        AND tc.constraint_name = kcu.constraint_name
       WHERE tc.table_schema = $1
         AND tc.table_name = $2
         AND tc.constraint_type = 'PRIMARY KEY'
@@ -1049,7 +1051,9 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
         string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) as columns
       FROM information_schema.table_constraints tc
       JOIN information_schema.key_column_usage kcu 
-        ON tc.constraint_name = kcu.constraint_name
+        ON tc.constraint_catalog = kcu.constraint_catalog
+        AND tc.constraint_schema = kcu.constraint_schema
+        AND tc.constraint_name = kcu.constraint_name
       WHERE tc.table_schema = $1
         AND tc.table_name = $2
         AND tc.constraint_type = 'UNIQUE'

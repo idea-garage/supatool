@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.5
+### Fixed
+- **extract**: Primary key and UNIQUE constraint extraction now joins `information_schema.table_constraints` to `key_column_usage` by constraint catalog, schema, and name. This prevents columns from same-named constraints on same-named tables in other schemas from leaking into generated DDL.
+
 ## v0.6.4
 ### Fixed
 - **extract `--schema-only`**: Previously extracted tables only, causing RPC/cron/types files to be absent from `writtenPaths` and deleted by `--force`. `--schema-only` now implies full object extraction (equivalent to `--all`) for the target schema.
@@ -183,4 +187,4 @@ All notable changes to this project will be documented in this file.
 
 ### Deprecation Notice
 - Migrate from `supatool sync` → `supatool deploy --table <table-name> --dry-run`
-- `sync` command continues to work but shows deprecation warning 
+- `sync` command continues to work but shows deprecation warning

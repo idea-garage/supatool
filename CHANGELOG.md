@@ -2,11 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.6.5
+## v0.6.6
 ### Fixed
 - **extract**: Primary key and UNIQUE constraint extraction now uses schema-qualified `pg_catalog` queries. This prevents columns from same-named constraints on same-named tables in other schemas from leaking into generated DDL while reducing catalog query cost.
 - **extract**: Catalog analysis now honors `SUPATOOL_MAX_CONCURRENT=1`, bounds the queue on the single PostgreSQL client, and applies finite connection and query timeouts.
 - **extract**: Catalog query failures now abort before definitions are saved instead of producing partial table or view output. Absence of the optional `pg_cron` relation remains non-fatal.
+
+## v0.6.5
+### Fixed
+- **extract**: Primary key and UNIQUE constraint extraction now joins `information_schema.table_constraints` to `key_column_usage` by constraint catalog, schema, and name. This prevents columns from same-named constraints on same-named tables in other schemas from leaking into generated DDL.
 
 ## v0.6.4
 ### Fixed

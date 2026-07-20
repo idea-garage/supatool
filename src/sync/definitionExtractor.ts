@@ -154,10 +154,9 @@ function stopProgressDisplay() {
  */
 async function fetchRlsPolicies(client: Client, spinner?: any, progress?: ProgressTracker, schemas: string[] = ['public']): Promise<TableDefinition[]> {
   const policies: TableDefinition[] = [];
-  
-  try {
-    const schemaPlaceholders = schemas.map((_, index) => `$${index + 1}`).join(', ');
-    const result = await client.query(`
+
+  const schemaPlaceholders = schemas.map((_, index) => `$${index + 1}`).join(', ');
+  const result = await client.query(`
       SELECT 
         schemaname,
         tablename,
@@ -252,11 +251,6 @@ async function fetchRlsPolicies(client: Client, spinner?: any, progress?: Progre
   }
   
   return policies;
-  
-  } catch (error) {
-    console.warn('Skipping RLS policies extraction:', error instanceof Error ? error.message : String(error));
-    return [];
-  }
 }
 
 /** Per-table RLS enabled/disabled and policy count (for Tables docs and warnings) */
@@ -566,7 +560,12 @@ async function fetchCronJobs(client: Client, spinner?: any, progress?: ProgressT
       });
     }
   } catch (error) {
-    // Skip when pg_cron extension is not present
+    // pg_cron is optional. Only its absence is safe to skip; timeouts,
+    // permission failures, and other catalog errors must fail closed.
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : undefined;
+    if (code !== '42P01') throw error;
   }
   
   return cronJobs;
@@ -802,131 +801,117 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
     let timestamp = Math.floor(new Date('2020-01-01').getTime() / 1000);
 
     if (type === 'table') {
-      // Table case
-      try {
-        // Get table last updated time
-        const tableStatsResult = await client.query(`
-          SELECT 
-            EXTRACT(EPOCH FROM GREATEST(
-              COALESCE(last_vacuum, '1970-01-01'::timestamp),
-              COALESCE(last_autovacuum, '1970-01-01'::timestamp),
-              COALESCE(last_analyze, '1970-01-01'::timestamp),
-              COALESCE(last_autoanalyze, '1970-01-01'::timestamp)
-            ))::bigint as last_updated
-          FROM pg_stat_user_tables 
-          WHERE relname = $1 AND schemaname = $2
-        `, [name, schemaName]);
+      // Get table last updated time. Catalog errors must abort extraction so
+      // an incomplete definition set is never written.
+      const tableStatsResult = await client.query(`
+        SELECT
+          EXTRACT(EPOCH FROM GREATEST(
+            COALESCE(last_vacuum, '1970-01-01'::timestamp),
+            COALESCE(last_autovacuum, '1970-01-01'::timestamp),
+            COALESCE(last_analyze, '1970-01-01'::timestamp),
+            COALESCE(last_autoanalyze, '1970-01-01'::timestamp)
+          ))::bigint as last_updated
+        FROM pg_stat_user_tables
+        WHERE relname = $1 AND schemaname = $2
+      `, [name, schemaName]);
 
-        if (tableStatsResult.rows.length > 0 && tableStatsResult.rows[0].last_updated > 0) {
-          timestamp = tableStatsResult.rows[0].last_updated;
-        }
-      } catch (error) {
-        // On error use default timestamp
+      if (tableStatsResult.rows.length > 0 && tableStatsResult.rows[0].last_updated > 0) {
+        timestamp = tableStatsResult.rows[0].last_updated;
       }
 
       // Generate CREATE TABLE statement
       ddl = await generateCreateTableDDL(client, name, schemaName);
-      
+
       // Get table comment
-      try {
-        const tableCommentResult = await client.query(`
-          SELECT obj_description(c.oid) as table_comment
-          FROM pg_class c
-          JOIN pg_namespace n ON c.relnamespace = n.oid
-          WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'r'
-        `, [name, schemaName]);
-        
-        if (tableCommentResult.rows.length > 0 && tableCommentResult.rows[0].table_comment) {
-          comment = tableCommentResult.rows[0].table_comment;
-        }
-      } catch (error) {
-        // On error no comment
+      const tableCommentResult = await client.query(`
+        SELECT obj_description(c.oid) as table_comment
+        FROM pg_class c
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'r'
+      `, [name, schemaName]);
+
+      if (tableCommentResult.rows.length > 0 && tableCommentResult.rows[0].table_comment) {
+        comment = tableCommentResult.rows[0].table_comment;
       }
     } else {
       // View case
-      try {
-        // Get view definition and security_invoker setting
-        const viewResult = await client.query(`
-          SELECT 
-            pv.definition,
-            c.relname,
-            c.reloptions
-          FROM pg_views pv
-          JOIN pg_class c ON c.relname = pv.viewname
-          JOIN pg_namespace n ON c.relnamespace = n.oid
-          WHERE pv.schemaname = $1 
-            AND pv.viewname = $2
-            AND n.nspname = $1
-            AND c.relkind = 'v'
-        `, [schemaName, name]);
+      // Get view definition and security_invoker setting
+      const viewResult = await client.query(`
+        SELECT
+          pv.definition,
+          c.relname,
+          c.reloptions
+        FROM pg_views pv
+        JOIN pg_class c ON c.relname = pv.viewname
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE pv.schemaname = $1
+          AND pv.viewname = $2
+          AND n.nspname = $1
+          AND c.relkind = 'v'
+      `, [schemaName, name]);
 
-        if (viewResult.rows.length > 0) {
-          const view = viewResult.rows[0];
-          
-          // Get view comment
-          const viewCommentResult = await client.query(`
-            SELECT obj_description(c.oid) as view_comment
-            FROM pg_class c
-            JOIN pg_namespace n ON c.relnamespace = n.oid
-            WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'v'
-          `, [name, schemaName]);
+      if (viewResult.rows.length === 0) {
+        throw new Error(`View definition not found for ${schemaName}.${name}`);
+      }
 
-          // Add view comment at top
-          if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
-            comment = viewCommentResult.rows[0].view_comment;
-            ddl = `-- ${comment}\n`;
-          } else {
-            ddl = `-- View: ${name}\n`;
-          }
+      const view = viewResult.rows[0];
 
-          // Add view definition
-          let ddlStart = `CREATE OR REPLACE VIEW ${schemaName}.${name}`;
-          
-          // Check security_invoker setting
-          if (view.reloptions) {
-            for (const option of view.reloptions) {
-              if (option.startsWith('security_invoker=')) {
-                const value = option.split('=')[1];
-                if (value === 'on' || value === 'true') {
-                  ddlStart += ' WITH (security_invoker = on)';
-                } else if (value === 'off' || value === 'false') {
-                  ddlStart += ' WITH (security_invoker = off)';
-                }
-                break;
-              }
+      // Get view comment
+      const viewCommentResult = await client.query(`
+        SELECT obj_description(c.oid) as view_comment
+        FROM pg_class c
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'v'
+      `, [name, schemaName]);
+
+      // Add view comment at top
+      if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
+        comment = viewCommentResult.rows[0].view_comment;
+        ddl = `-- ${comment}\n`;
+      } else {
+        ddl = `-- View: ${name}\n`;
+      }
+
+      // Add view definition
+      let ddlStart = `CREATE OR REPLACE VIEW ${schemaName}.${name}`;
+
+      // Check security_invoker setting
+      if (view.reloptions) {
+        for (const option of view.reloptions) {
+          if (option.startsWith('security_invoker=')) {
+            const value = option.split('=')[1];
+            if (value === 'on' || value === 'true') {
+              ddlStart += ' WITH (security_invoker = on)';
+            } else if (value === 'off' || value === 'false') {
+              ddlStart += ' WITH (security_invoker = off)';
             }
-          }
-          
-          ddl += ddlStart + ' AS\n' + view.definition + ';\n\n';
-          
-          // Add COMMENT ON statement
-          if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
-            ddl += `COMMENT ON VIEW ${schemaName}.${name} IS '${comment}';\n\n`;
-          } else {
-            ddl += `-- COMMENT ON VIEW ${schemaName}.${name} IS '_your_comment_here_';\n\n`;
-          }
-
-          // Get view creation time (if available)
-          try {
-            const viewStatsResult = await client.query(`
-              SELECT EXTRACT(EPOCH FROM GREATEST(
-                COALESCE(pg_stat_get_last_vacuum_time(c.oid), '1970-01-01'::timestamp),
-                COALESCE(pg_stat_get_last_analyze_time(c.oid), '1970-01-01'::timestamp)
-              ))::bigint as last_updated
-              FROM pg_class c
-              JOIN pg_namespace n ON c.relnamespace = n.oid
-              WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'v'
-            `, [name, schemaName]);
-
-            if (viewStatsResult.rows.length > 0 && viewStatsResult.rows[0].last_updated > 0) {
-              timestamp = viewStatsResult.rows[0].last_updated;
-            }
-          } catch (error) {
-            // On error use default timestamp
+            break;
           }
         }
-      } catch (error) {
-        // On error no comment
+      }
+
+      ddl += ddlStart + ' AS\n' + view.definition + ';\n\n';
+
+      // Add COMMENT ON statement
+      if (viewCommentResult.rows.length > 0 && viewCommentResult.rows[0].view_comment) {
+        ddl += `COMMENT ON VIEW ${schemaName}.${name} IS '${comment}';\n\n`;
+      } else {
+        ddl += `-- COMMENT ON VIEW ${schemaName}.${name} IS '_your_comment_here_';\n\n`;
+      }
+
+      // Get view creation time (if available)
+      const viewStatsResult = await client.query(`
+        SELECT EXTRACT(EPOCH FROM GREATEST(
+          COALESCE(pg_stat_get_last_vacuum_time(c.oid), '1970-01-01'::timestamp),
+          COALESCE(pg_stat_get_last_analyze_time(c.oid), '1970-01-01'::timestamp)
+        ))::bigint as last_updated
+        FROM pg_class c
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE c.relname = $1 AND n.nspname = $2 AND c.relkind = 'v'
+      `, [name, schemaName]);
+
+      if (viewStatsResult.rows.length > 0 && viewStatsResult.rows[0].last_updated > 0) {
+        timestamp = viewStatsResult.rows[0].last_updated;
       }
     }
 
@@ -1814,16 +1799,12 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
       progress.views.total = parseInt(viewsCountResult.rows[0].count);
       
       // Get total RLS policy count (per table)
-      try {
-        const rlsCountResult = await client.query(`
-          SELECT COUNT(DISTINCT tablename) as count 
-          FROM pg_policies 
-          WHERE schemaname = 'public'
-        `);
-        progress.rls.total = parseInt(rlsCountResult.rows[0].count);
-      } catch (error) {
-        progress.rls.total = 0;
-      }
+      const rlsCountResult = await client.query(`
+        SELECT COUNT(DISTINCT tablename) as count
+        FROM pg_policies
+        WHERE schemaname = 'public'
+      `);
+      progress.rls.total = parseInt(rlsCountResult.rows[0].count);
       
       // Get total functions count
       const functionsCountResult = await client.query(`
@@ -1849,6 +1830,10 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
         const cronCountResult = await client.query('SELECT COUNT(*) as count FROM cron.job');
         progress.cronJobs.total = parseInt(cronCountResult.rows[0].count);
       } catch (error) {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { code?: unknown }).code)
+          : undefined;
+        if (code !== '42P01') throw error;
         progress.cronJobs.total = 0;
       }
       
@@ -1915,36 +1900,24 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
     let relations: SchemaRelation[] = [];
     let rpcTables: RpcTableUsage[] = [];
     let allSchemas: string[] = [];
-    try {
-      allSchemas = await fetchAllSchemas(client);
-      relations = await fetchRelationList(client, schemas);
-      const funcDefs = allDefinitions.filter(d => d.type === 'function');
-      for (const f of funcDefs) {
-        const tables = extractTableRefsFromFunctionDdl(f.ddl, f.schema ?? 'public');
-        if (tables.length > 0) {
-          rpcTables.push({
-            rpc: f.schema ? `${f.schema}.${f.name}` : f.name,
-            tables
-          });
-        }
-      }
-    } catch (err) {
-      if (process.env.SUPATOOL_DEBUG) {
-        console.warn('RELATIONS/RPC_TABLES extraction skipped:', err);
+    allSchemas = await fetchAllSchemas(client);
+    relations = await fetchRelationList(client, schemas);
+    const funcDefs = allDefinitions.filter(d => d.type === 'function');
+    for (const f of funcDefs) {
+      const tables = extractTableRefsFromFunctionDdl(f.ddl, f.schema ?? 'public');
+      if (tables.length > 0) {
+        rpcTables.push({
+          rpc: f.schema ? `${f.schema}.${f.name}` : f.name,
+          tables
+        });
       }
     }
 
     // RLS status (for Tables docs, rls_warnings.md, and extract-time warning)
     let tableRlsStatus: TableRlsStatus[] = [];
-    try {
-      const tableDefs = allDefinitions.filter(d => d.type === 'table');
-      if (tableDefs.length > 0) {
-        tableRlsStatus = await fetchTableRlsStatus(client, schemas);
-      }
-    } catch (err) {
-      if (process.env.SUPATOOL_DEBUG) {
-        console.warn('RLS status fetch skipped:', err);
-      }
+    const tableDefs = allDefinitions.filter(d => d.type === 'table');
+    if (tableDefs.length > 0) {
+      tableRlsStatus = await fetchTableRlsStatus(client, schemas);
     }
 
     // Save definitions (table+RLS+triggers merged, schema folders)
@@ -1999,4 +1972,4 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
   }
 }
 
-export { generateCreateTableDDL };
+export { fetchTableDefinitions, generateCreateTableDDL };

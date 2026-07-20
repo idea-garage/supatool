@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const {
+  fetchTableDefinitions,
   generateCreateTableDDL,
   resolveMaxConcurrent,
   resolveConnectionTimeoutMs,
@@ -84,6 +85,57 @@ async function main() {
   assert.strictEqual(resolveQueryTimeoutMs(undefined), 60000);
   assert.strictEqual(resolveQueryTimeoutMs('1'), 1);
 
+  const priorMaxConcurrent = process.env.SUPATOOL_MAX_CONCURRENT;
+  let activeViewDefinitions = 0;
+  let maxActiveViewDefinitions = 0;
+  const serializedViewClient = {
+    async query(sql) {
+      const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+      if (normalizedSql.includes('FROM pg_tables')) return result([]);
+      if (normalizedSql.includes('FROM pg_views') && normalizedSql.includes("'view' as type")) {
+        return result([
+          { tablename: 'first_view', schemaname: 'schema_a', type: 'view' },
+          { tablename: 'second_view', schemaname: 'schema_a', type: 'view' }
+        ]);
+      }
+      if (normalizedSql.includes('pv.definition')) {
+        activeViewDefinitions += 1;
+        maxActiveViewDefinitions = Math.max(maxActiveViewDefinitions, activeViewDefinitions);
+        await new Promise(resolve => setImmediate(resolve));
+        activeViewDefinitions -= 1;
+        return result([{ definition: 'SELECT 1', relname: 'test_view', reloptions: null }]);
+      }
+      if (normalizedSql.includes('view_comment')) return result([]);
+      if (normalizedSql.includes('pg_stat_get_last_vacuum_time')) return result([]);
+      throw new Error(`Unexpected SQL: ${normalizedSql}`);
+    }
+  };
+  try {
+    process.env.SUPATOOL_MAX_CONCURRENT = '1';
+    const views = await fetchTableDefinitions(serializedViewClient, undefined, undefined, ['schema_a']);
+    assert.strictEqual(views.length, 2);
+    assert.strictEqual(maxActiveViewDefinitions, 1);
+  } finally {
+    if (priorMaxConcurrent === undefined) delete process.env.SUPATOOL_MAX_CONCURRENT;
+    else process.env.SUPATOOL_MAX_CONCURRENT = priorMaxConcurrent;
+  }
+
+  const timedOutViewClient = {
+    async query(sql) {
+      const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+      if (normalizedSql.includes('FROM pg_tables')) return result([]);
+      if (normalizedSql.includes('FROM pg_views') && normalizedSql.includes("'view' as type")) {
+        return result([{ tablename: 'slow_view', schemaname: 'schema_a', type: 'view' }]);
+      }
+      if (normalizedSql.includes('pv.definition')) throw new Error('Query read timeout');
+      throw new Error(`Unexpected SQL: ${normalizedSql}`);
+    }
+  };
+  await assert.rejects(
+    fetchTableDefinitions(timedOutViewClient, undefined, undefined, ['schema_a']),
+    /Failed to extract schema_a\.slow_view \(view\): Query read timeout/
+  );
+
   const ddl = await generateCreateTableDDL(createClient(), 'jobs', 'schema_a');
 
   assert.match(ddl, /PRIMARY KEY \(id\)/);
@@ -91,11 +143,11 @@ async function main() {
   assert.match(ddl, /CONSTRAINT jobs_code_key UNIQUE \(crossload_code\)/);
   assert.doesNotMatch(ddl, /appdb_code/);
 
-  console.log('✅ bounded extraction settings and schema-aware pg_catalog constraints');
+  console.log('✅ bounded settings, fail-closed extraction, and schema-aware pg_catalog constraints');
 }
 
 main().catch(error => {
-  console.error('❌ bounded extraction settings and schema-aware pg_catalog constraints');
+  console.error('❌ bounded settings, fail-closed extraction, and schema-aware pg_catalog constraints');
   console.error(error);
   process.exit(1);
 });

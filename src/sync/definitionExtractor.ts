@@ -1,5 +1,32 @@
 import { Client } from 'pg';
 
+const DEFAULT_MAX_CONCURRENT = 5;
+const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
+const DEFAULT_QUERY_TIMEOUT_MS = 60_000;
+
+function resolveBoundedPositiveInteger(
+  rawValue: string | undefined,
+  fallback: number,
+  maximum: number
+): number {
+  if (rawValue === undefined || rawValue.trim() === '') return fallback;
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed < 1) return fallback;
+  return Math.min(maximum, parsed);
+}
+
+export function resolveMaxConcurrent(rawValue = process.env.SUPATOOL_MAX_CONCURRENT): number {
+  return resolveBoundedPositiveInteger(rawValue, DEFAULT_MAX_CONCURRENT, 50);
+}
+
+export function resolveConnectionTimeoutMs(rawValue = process.env.SUPATOOL_CONNECTION_TIMEOUT_MS): number {
+  return resolveBoundedPositiveInteger(rawValue, DEFAULT_CONNECTION_TIMEOUT_MS, 300_000);
+}
+
+export function resolveQueryTimeoutMs(rawValue = process.env.SUPATOOL_QUERY_TIMEOUT_MS): number {
+  return resolveBoundedPositiveInteger(rawValue, DEFAULT_QUERY_TIMEOUT_MS, 300_000);
+}
+
 export interface TableDefinition {
   name: string;
   type: 'table' | 'view' | 'rls' | 'function' | 'trigger' | 'cron' | 'type';
@@ -754,12 +781,9 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
     progress.views.total = viewCount;
   }
 
-  // Process tables/views with limited concurrency (cap connection count)
-  // Max configurable via env (default 20, max 50)
-  const envValue = process.env.SUPATOOL_MAX_CONCURRENT || '20';
-  const MAX_CONCURRENT = Math.min(50, parseInt(envValue));
-  // Use env value (capped at minimum 5)
-  const CONCURRENT_LIMIT = Math.max(5, MAX_CONCURRENT);
+  // The client serializes queries on one connection. Keep the queue bounded and
+  // honour a requested value of 1 for constrained production catalog reads.
+  const CONCURRENT_LIMIT = resolveMaxConcurrent();
   
   // Debug log (development only)
   if (process.env.NODE_ENV === 'development' || process.env.SUPATOOL_DEBUG) {
@@ -918,7 +942,7 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
   };
 
   // Simple batch concurrency (reliable progress updates)
-  const processedResults: (TableDefinition | null)[] = [];
+  const processedResults: TableDefinition[] = [];
   
   for (let i = 0; i < allObjects.length; i += CONCURRENT_LIMIT) {
     const batch = allObjects.slice(i, i + CONCURRENT_LIMIT);
@@ -952,8 +976,8 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
          
          return result;
        } catch (error) {
-         console.error(`Error processing ${obj.type} ${obj.tablename}:`, error);
-         return null;
+         const detail = error instanceof Error ? error.message : String(error);
+         throw new Error(`Failed to extract ${obj.schemaname}.${obj.tablename} (${obj.type}): ${detail}`);
        }
      });
     
@@ -962,12 +986,10 @@ async function fetchTableDefinitions(client: Client, spinner?: any, progress?: P
     processedResults.push(...batchResults);
   }
 
-  // Add to definitions excluding nulls
+  // Add to definitions
   for (const result of processedResults) {
-    if (result) {
-      const { isTable, ...definition } = result as any;
-      definitions.push(definition);
-    }
+    const { isTable, ...definition } = result as any;
+    definitions.push(definition);
   }
 
   return definitions;
@@ -1007,18 +1029,19 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       ORDER BY c.ordinal_position
     `, [schemaName, tableName]),
     
-    // Get primary key info
+    // Get primary key info directly from pg_catalog. information_schema's
+    // constraint views are substantially more expensive on large catalogs.
     client.query(`
-      SELECT column_name
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu 
-        ON tc.constraint_catalog = kcu.constraint_catalog
-        AND tc.constraint_schema = kcu.constraint_schema
-        AND tc.constraint_name = kcu.constraint_name
-      WHERE tc.table_schema = $1
-        AND tc.table_name = $2
-        AND tc.constraint_type = 'PRIMARY KEY'
-      ORDER BY kcu.ordinal_position
+      SELECT a.attname AS column_name
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS keys(attnum, ord)
+      JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = keys.attnum
+      WHERE con.contype = 'p'
+        AND nsp.nspname = $1
+        AND rel.relname = $2
+      ORDER BY keys.ord
     `, [schemaName, tableName]),
     
     // Get table comment
@@ -1044,21 +1067,21 @@ async function generateCreateTableDDL(client: Client, tableName: string, schemaN
       ORDER BY c.ordinal_position
     `, [schemaName, tableName]),
     
-    // Get UNIQUE constraints
+    // Get UNIQUE constraints directly from pg_catalog for the same reason.
     client.query(`
-      SELECT 
-        tc.constraint_name,
-        string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) as columns
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu 
-        ON tc.constraint_catalog = kcu.constraint_catalog
-        AND tc.constraint_schema = kcu.constraint_schema
-        AND tc.constraint_name = kcu.constraint_name
-      WHERE tc.table_schema = $1
-        AND tc.table_name = $2
-        AND tc.constraint_type = 'UNIQUE'
-      GROUP BY tc.constraint_name
-      ORDER BY tc.constraint_name
+      SELECT
+        con.conname AS constraint_name,
+        string_agg(a.attname, ', ' ORDER BY keys.ord) AS columns
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS keys(attnum, ord)
+      JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = keys.attnum
+      WHERE con.contype = 'u'
+        AND nsp.nspname = $1
+        AND rel.relname = $2
+      GROUP BY con.oid, con.conname
+      ORDER BY con.conname
     `, [schemaName, tableName]),
     
     // Get FOREIGN KEY constraints
@@ -1736,6 +1759,9 @@ export async function extractDefinitions(options: DefinitionExtractOptions): Pro
 
   const client = new Client({ 
     connectionString: encodedConnectionString,
+    connectionTimeoutMillis: resolveConnectionTimeoutMs(),
+    query_timeout: resolveQueryTimeoutMs(),
+    statement_timeout: resolveQueryTimeoutMs(),
     ssl: {
       rejectUnauthorized: false,
       ca: undefined

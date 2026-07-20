@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 const assert = require('assert');
-const { generateCreateTableDDL } = require('../dist/sync/definitionExtractor');
-
-const schemaAwareConstraintJoin = /tc\.constraint_catalog\s*=\s*kcu\.constraint_catalog[\s\S]*tc\.constraint_schema\s*=\s*kcu\.constraint_schema[\s\S]*tc\.constraint_name\s*=\s*kcu\.constraint_name/;
+const {
+  generateCreateTableDDL,
+  resolveMaxConcurrent,
+  resolveConnectionTimeoutMs,
+  resolveQueryTimeoutMs
+} = require('../dist/sync/definitionExtractor');
 
 function result(rows = []) {
   return { rows };
@@ -41,24 +44,22 @@ function createClient() {
         ]);
       }
 
-      if (normalizedSql.includes("tc.constraint_type = 'PRIMARY KEY'")) {
+      if (normalizedSql.includes("con.contype = 'p'")) {
         assert.deepStrictEqual(params, ['schema_a', 'jobs']);
-        assert.match(normalizedSql, /tc\.table_schema = \$1/);
-        assert.match(normalizedSql, /tc\.table_name = \$2/);
-        // schema_b.jobs also has jobs_pkey(id). A name-only join would return both rows.
-        return result(schemaAwareConstraintJoin.test(sql)
-          ? [{ column_name: 'id' }]
-          : [{ column_name: 'id' }, { column_name: 'id' }]);
+        assert.match(normalizedSql, /FROM pg_constraint con/);
+        assert.match(normalizedSql, /nsp\.nspname = \$1/);
+        assert.match(normalizedSql, /rel\.relname = \$2/);
+        assert.match(normalizedSql, /WITH ORDINALITY/);
+        return result([{ column_name: 'id' }]);
       }
 
-      if (normalizedSql.includes("tc.constraint_type = 'UNIQUE'")) {
+      if (normalizedSql.includes("con.contype = 'u'")) {
         assert.deepStrictEqual(params, ['schema_a', 'jobs']);
-        assert.match(normalizedSql, /tc\.table_schema = \$1/);
-        assert.match(normalizedSql, /tc\.table_name = \$2/);
-        // Both schemas have jobs_code_key, but each constraint covers a different column.
-        return result(schemaAwareConstraintJoin.test(sql)
-          ? [{ constraint_name: 'jobs_code_key', columns: 'crossload_code' }]
-          : [{ constraint_name: 'jobs_code_key', columns: 'crossload_code, appdb_code' }]);
+        assert.match(normalizedSql, /FROM pg_constraint con/);
+        assert.match(normalizedSql, /nsp\.nspname = \$1/);
+        assert.match(normalizedSql, /rel\.relname = \$2/);
+        assert.match(normalizedSql, /GROUP BY con\.oid, con\.conname/);
+        return result([{ constraint_name: 'jobs_code_key', columns: 'crossload_code' }]);
       }
 
       if (normalizedSql.includes('obj_description(c.oid)')) return result([]);
@@ -72,6 +73,17 @@ function createClient() {
 }
 
 async function main() {
+  assert.strictEqual(resolveMaxConcurrent('1'), 1);
+  assert.strictEqual(resolveMaxConcurrent('50'), 50);
+  assert.strictEqual(resolveMaxConcurrent('100'), 50);
+  assert.strictEqual(resolveMaxConcurrent('0'), 5);
+  assert.strictEqual(resolveMaxConcurrent('-1'), 5);
+  assert.strictEqual(resolveMaxConcurrent('not-a-number'), 5);
+  assert.strictEqual(resolveConnectionTimeoutMs(undefined), 15000);
+  assert.strictEqual(resolveConnectionTimeoutMs('999999'), 300000);
+  assert.strictEqual(resolveQueryTimeoutMs(undefined), 60000);
+  assert.strictEqual(resolveQueryTimeoutMs('1'), 1);
+
   const ddl = await generateCreateTableDDL(createClient(), 'jobs', 'schema_a');
 
   assert.match(ddl, /PRIMARY KEY \(id\)/);
@@ -79,11 +91,11 @@ async function main() {
   assert.match(ddl, /CONSTRAINT jobs_code_key UNIQUE \(crossload_code\)/);
   assert.doesNotMatch(ddl, /appdb_code/);
 
-  console.log('✅ schema-aware PK and UNIQUE extraction');
+  console.log('✅ bounded extraction settings and schema-aware pg_catalog constraints');
 }
 
 main().catch(error => {
-  console.error('❌ schema-aware PK and UNIQUE extraction');
+  console.error('❌ bounded extraction settings and schema-aware pg_catalog constraints');
   console.error(error);
   process.exit(1);
 });
